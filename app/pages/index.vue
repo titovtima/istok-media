@@ -24,6 +24,16 @@ const socket = useChecklistSocket()
         <div class="menu-arrow" aria-hidden="true">→</div>
       </NuxtLink>
 
+
+      <NuxtLink to="/calendar" class="menu-card">
+        <div class="menu-title">Календарь залов и студии</div>
+        <div class="menu-desc">
+          Бронирование малого зала, большого зала и студии. Регулярные брони,
+          отмена на конкретную дату, отметки присутствия.
+        </div>
+        <div class="menu-arrow" aria-hidden="true">→</div>
+      </NuxtLink>
+
       <NuxtLink to="/feedback" class="menu-card">
         <div class="menu-title">Обратная связь</div>
         <div class="menu-desc">

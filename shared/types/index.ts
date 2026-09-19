@@ -120,3 +120,74 @@ export type WsServerMessage =
   | WsError
 
 export type WsClientMessage = WsSubscribe
+
+
+// ---------------------------------------------------------------------------
+// Бронирование залов
+// ---------------------------------------------------------------------------
+export type BookingResource = 'small' | 'big' | 'studio'
+export type OrganizerType = 'person' | 'ministry' | 'church'
+export type SeriesRepeat = 'weekly' | 'biweekly'
+export type AttendanceStatus = 'yes' | 'no' | 'maybe'
+
+export interface BookingRecord {
+  id: string                 // для series-развёрток: 'series:<seriesId>:<date>'
+  seriesId: string | null    // null для разовых
+  date: string               // YYYY-MM-DD
+  start: string              // HH:MM
+  end: string                // HH:MM
+  resource: BookingResource
+  title: string
+  organizerType: OrganizerType
+  organizerName: string
+  organizerId: string | null
+  note: string
+  cancelled: boolean         // отменено (для series-развёртки — на конкретную дату)
+  cancelledSeries?: boolean  // вся серия отменена — показываем только для инфо
+  createdBy?: string | null
+}
+
+export interface AttendanceRecord {
+  name: string
+  status: AttendanceStatus
+  clientId: string | null      // кто нажал последним (для подсветки «моя»)
+}
+
+export interface AttendanceSummary {
+  yes: AttendanceRecord[]
+  no: AttendanceRecord[]
+  maybe: AttendanceRecord[]
+  // статус текущего пользователя (по viewerName + clientId)
+  mine: AttendanceStatus | null
+}
+
+export interface BookingWithAttendance extends BookingRecord {
+  attendance: AttendanceSummary
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket — дополнительные типы
+// ---------------------------------------------------------------------------
+export interface WsBookingChanged {
+  type: 'booking-changed'          // создана/обновлена/отменена бронь
+  date: string                     // дата, которую надо перерисовать (YYYY-MM-DD)
+}
+
+export interface WsAttendanceChanged {
+  type: 'attendance-changed'
+  eventKey: string
+  name: string
+  clientId: string | null
+  status: AttendanceStatus | null  // null = отметка снята
+}
+
+export type WsServerMessage =
+  | WsHello
+  | WsCheckUpdate
+  | WsServiceMetaUpdate
+  | WsPresence
+  | WsFeedbackCreated
+  | WsFeedbackUpdated
+  | WsBookingChanged
+  | WsAttendanceChanged
+  | WsError

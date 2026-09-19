@@ -250,3 +250,112 @@ footer{text-align:center; color:var(--text-dim); font-size:11.5px; font-family:'
   background:var(--good);
   box-shadow:0 0 0 3px color-mix(in srgb, var(--good) 20%, transparent);
 }
+
+
+/* ---- форма брони: сетка ---- */
+.form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px 16px; }
+.form-grid .span-2{ grid-column:1 / -1; }
+@media (max-width:560px){ .form-grid{ grid-template-columns:1fr; } }
+.field{ display:flex; flex-direction:column; gap:6px; }
+.field input[type="text"], .field input[type="date"], .field input[type="time"]{
+  font-family:'Anonymous Pro',monospace; font-size:14px; color:var(--text);
+  background:var(--surface-2); border:1px solid var(--border); border-radius:6px;
+  padding:9px 10px; outline-offset:2px; width:100%;
+}
+.field input:focus-visible{ outline:2px solid var(--accent); }
+.card{ background:var(--surface); border:1px solid var(--border); border-radius:10px;
+       padding:20px 20px 22px; box-shadow:var(--shadow); }
+.card h2{ font-family:'Golos Text',sans-serif; font-weight:600; font-size:19px;
+          margin:0 0 14px; text-transform:lowercase; }
+
+/* ---- кнопки-таблетки с цветовой кодировкой ресурса ---- */
+.pill-group button.res-small[aria-pressed="true"]{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+.pill-group button.res-big[aria-pressed="true"]{ background:var(--good); border-color:var(--good); color:var(--accent-ink); }
+.pill-group button.res-studio[aria-pressed="true"]{ background:var(--warn); border-color:var(--warn); color:var(--accent-ink); }
+
+/* ---- панель диапазона ---- */
+.list-head{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+.range-nav{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.range-nav button{ font-family:'Anonymous Pro',monospace; font-size:12.5px; text-transform:lowercase;
+  background:none; border:1px solid var(--border); color:var(--text); border-radius:999px;
+  padding:5px 12px; cursor:pointer; }
+.range-label{ font-family:'Golos Text',sans-serif; font-weight:600; font-size:14.5px; }
+
+/* ---- дни ---- */
+.day-group{ margin-top:18px; }
+.day-group:first-child{ margin-top:0; }
+.day-heading{ font-family:'Golos Text',sans-serif; font-weight:600; font-size:14px;
+  text-transform:lowercase; color:var(--accent); padding-bottom:6px;
+  border-bottom:1px solid var(--border); margin-bottom:8px;
+  display:flex; align-items:baseline; gap:8px; }
+.day-heading .today-tag{ font-family:'Anonymous Pro',monospace; font-size:10.5px;
+  color:var(--accent-ink); background:var(--accent); border-radius:999px;
+  padding:1px 8px; text-transform:lowercase; }
+.day-empty{ font-size:13px; color:var(--text-dim); font-style:italic; padding:4px 0 2px; }
+
+/* ---- бронь ---- */
+.booking-row{ display:flex; align-items:flex-start; gap:12px; padding:9px 4px;
+  border-top:1px solid var(--border); }
+.booking-row:first-of-type{ border-top:none; }
+.booking-row.cancelled{ opacity:.55; }
+.booking-time{ font-family:'Anonymous Pro',monospace; font-size:13px; color:var(--text-dim);
+  white-space:nowrap; padding-top:2px; min-width:92px; }
+.booking-body{ flex:1; min-width:0; }
+.booking-top{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.booking-title{ font-family:'Golos Text',sans-serif; font-weight:600; font-size:14.5px; }
+.booking-title.strike{ text-decoration:line-through; text-decoration-color:var(--warn); }
+.booking-meta{ font-size:12.5px; color:var(--text-dim); margin-top:2px; }
+.booking-meta .muted{ color:var(--text-dim); }
+.res-tag{ font-family:'Golos Text',sans-serif; font-weight:600; font-size:11px;
+  text-transform:lowercase; border-radius:999px; padding:2px 9px; }
+.res-tag.res-small  { color:var(--accent); background:var(--accent-soft-bg); }
+.res-tag.res-big    { color:var(--good);   background:var(--good-soft-bg); }
+.res-tag.res-studio { color:var(--warn);   background:var(--warn-soft-bg); }
+.series-tag{ font-family:'Anonymous Pro',monospace; font-size:10.5px; color:var(--text-dim);
+  border:1px solid var(--border); border-radius:999px; padding:1px 8px; }
+.cancelled-tag{ font-family:'Anonymous Pro',monospace; font-size:10.5px; color:var(--warn);
+  border:1px solid var(--warn); border-radius:999px; padding:1px 8px; }
+
+/* ---- присутствие ---- */
+.attendance{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:7px; }
+.att-btn{ font-family:'Golos Text',sans-serif; font-weight:700; font-size:15px;
+  width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center;
+  background:var(--bg); color:var(--text); border:1px solid var(--border);
+  border-radius:999px; cursor:pointer; line-height:1; }
+.att-btn[aria-pressed="true"].att-yes   { background:var(--good);  color:var(--accent-ink); border-color:var(--good); }
+.att-btn[aria-pressed="true"].att-no    { background:var(--warn);  color:var(--accent-ink); border-color:var(--warn); }
+.att-btn[aria-pressed="true"].att-maybe { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+.att-summary{ font-family:'Anonymous Pro',monospace; font-size:11.5px; color:var(--text-dim);
+  background:none; border:none; cursor:pointer; padding:2px 4px; }
+.att-summary .caret{ color:var(--text-dim); }
+.icon-btn{ font-family:'Anonymous Pro',monospace; font-size:11px; color:var(--text-dim);
+  background:none; border:1px solid var(--border); border-radius:999px;
+  padding:3px 9px; cursor:pointer; margin-left:auto; }
+.icon-btn + .icon-btn{ margin-left:4px; }
+.icon-btn:hover{ color:var(--warn); border-color:var(--warn); }
+
+.att-detail{ margin-top:8px; padding:8px 10px; background:var(--surface-2);
+  border-radius:6px; display:flex; flex-direction:column; gap:6px; }
+.att-group{ display:flex; flex-wrap:wrap; gap:6px; align-items:baseline; }
+.att-group-title{ font-family:'Golos Text',sans-serif; font-weight:600; font-size:11.5px;
+  text-transform:lowercase; padding:1px 8px; border-radius:999px; }
+.att-yes-title  { color:var(--good);   background:var(--good-soft-bg); }
+.att-no-title   { color:var(--warn);   background:var(--warn-soft-bg); }
+.att-maybe-title{ color:var(--accent); background:var(--accent-soft-bg); }
+.att-name{ font-family:'Anonymous Pro',monospace; font-size:12px; color:var(--text); }
+
+
+/* ---- поле «Кто отмечается» над списком броней ---- */
+.viewer-row{ margin:0 0 12px; display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
+.viewer-row .field{ max-width:260px; flex:0 1 260px; }
+.viewer-row input{ font-size:13.5px; }
+
+/* ---- кнопка «вернуть» для отменённой серии ---- */
+.icon-btn.icon-restore{ color:var(--good); border-color:var(--good); }
+.icon-btn.icon-restore:hover{ background:var(--good-soft-bg); }
+
+
+/* ---- действия по брони ---- */
+.actions-row{ display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+.icon-btn.icon-restore{ color:var(--good); border-color:var(--good); }
+.icon-btn.icon-restore:hover{ background:var(--good-soft-bg); }

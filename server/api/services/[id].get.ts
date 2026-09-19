@@ -1,22 +1,23 @@
 import { query } from '~~/server/utils/db'
-import type { CheckEntry, DayKey, ServiceRecord } from '~~/shared/types'
-
-const DOW_TO_KEY: DayKey[] = [
-  'sunday', 'monday', 'tuesday', 'wednesday',
-  'thursday', 'friday', 'saturday',
-]
+import { parseServiceId, toISODate } from '~~/server/utils/services'
+import type { CheckEntry, ServiceRecord } from '~~/shared/types'
 
 export default defineEventHandler(async (event): Promise<ServiceRecord | null> => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'id required' })
 
-  const svc = await query<{ id: string; date: Date | string; outfit: string }>(
-    `SELECT id, date, outfit FROM services WHERE id = $1`,
+  const parsed = parseServiceId(id)
+  if (!parsed) throw createError({ statusCode: 400, statusMessage: 'invalid id format' })
+
+  const svc = await query<{ id: string; date: Date | string; slot: number; outfit: string }>(
+    `SELECT id, date, slot, outfit FROM services WHERE id = $1`,
     [id]
   )
   if (!svc.length) return null
 
-  const rows = await query<{ template_id: string; done: boolean; by_name: string | null; at_label: string | null }>(
+  const rows = await query<{
+    template_id: string; done: boolean; by_name: string | null; at_label: string | null
+  }>(
     `SELECT template_id, done, by_name, at_label FROM checks WHERE service_id = $1`,
     [id]
   )
@@ -27,15 +28,11 @@ export default defineEventHandler(async (event): Promise<ServiceRecord | null> =
   }
 
   const s = svc[0]
-  const iso = toISODate(s.date)
-  const [y, m, d] = iso.split('-').map(Number)
-  const day = DOW_TO_KEY[new Date(y, m - 1, d).getDay()]
-
-  return { id: s.id, date: iso, day, outfit: s.outfit, checks }
+  return {
+    id: s.id,
+    date: toISODate(s.date),
+    slot: s.slot,
+    outfit: s.outfit,
+    checks,
+  }
 })
-
-function toISODate(d: Date | string): string {
-  if (typeof d === 'string') return d.slice(0, 10)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}

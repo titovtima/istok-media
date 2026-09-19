@@ -1,23 +1,29 @@
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import type { DayKey, RecentService } from '~~/shared/types'
-import { formatDateLabel, dayLabel } from '~/composables/useFormat'
+import { formatDateLabel, dayLabel, dayKeyForDate } from '~/composables/useFormat'
 
 const props = defineProps<{
   date: string
   currentDay: DayKey
+  slot: number
+  dayServices: RecentService[]
   outfit: string
   recent: RecentService[]
   serviceId: string
   techDone: number
   techTotal: number
   wsConnected: boolean
-  wsPeers: number
+  userName: string
 }>()
 
 const emit = defineEmits<{
   (e: 'change-date', v: string): void
   (e: 'change-outfit', v: string): void
+  (e: 'select-slot', slot: number): void
+  (e: 'add-service'): void
   (e: 'open-service', id: string): void
+  (e: 'change-name', v: string): void
 }>()
 
 function onDate(ev: Event) {
@@ -26,11 +32,31 @@ function onDate(ev: Event) {
 function onOutfit(ev: Event) {
   emit('change-outfit', (ev.target as HTMLInputElement).value)
 }
+function onName(ev: Event) {
+  emit('change-name', (ev.target as HTMLInputElement).value)
+}
 function openByChip(id: string) {
   emit('open-service', id)
 }
 function isActive(day: DayKey): boolean {
   return props.currentDay === day
+}
+
+const nameDraft = ref(props.userName)
+watch(() => props.userName, (v) => { nameDraft.value = v })
+function commitName() {
+  if (nameDraft.value.trim() !== props.userName) {
+    emit('change-name', nameDraft.value)
+  }
+}
+
+// подпись для собрания в списке
+function slotLabel(slot: number): string {
+  return slot === 1 ? 'собрание 1' : `собрание ${slot}`
+}
+function chipLabel(r: RecentService): string {
+  const base = `${formatDateLabel(r.date)} · ${dayLabel(dayKeyForDate(r.date))}`
+  return r.slot > 1 ? `${base} · №${r.slot}` : base
 }
 </script>
 
@@ -48,6 +74,29 @@ function isActive(day: DayKey): boolean {
           <span class="day-badge" :aria-pressed="isActive('sunday') ? 'true' : 'false'">Воскресенье</span>
         </div>
       </div>
+      <div class="field slot-field">
+        <label>Собрание</label>
+        <div class="slot-toggle">
+          <button
+            v-for="s in dayServices"
+            :key="s.id"
+            type="button"
+            class="slot-chip"
+            :aria-pressed="s.slot === slot ? 'true' : 'false'"
+            @click="emit('select-slot', s.slot)"
+          >{{ slotLabel(s.slot) }}</button>
+          <button
+            type="button"
+            class="slot-chip slot-add"
+            @click="emit('add-service')"
+            title="Добавить ещё одно собрание на эту дату"
+          >+ ещё</button>
+        </div>
+      </div>
+      <ProgressRing :done="techDone" :total="techTotal" />
+    </div>
+
+    <div class="deck-row">
       <div class="field wide">
         <label for="outfit">Цвет одежды прославления сегодня</label>
         <input
@@ -56,16 +105,25 @@ function isActive(day: DayKey): boolean {
           @change="onOutfit"
         >
       </div>
-      <ProgressRing :done="techDone" :total="techTotal" />
     </div>
 
-    <div class="deck-row ws-row">
+    <div class="deck-row meta-row">
+      <div class="field name-field">
+        <label for="username">Кто проверяет</label>
+        <input
+          id="username"
+          type="text"
+          v-model="nameDraft"
+          placeholder="имя (необязательно)"
+          @blur="commitName"
+          @keyup.enter="commitName"
+        >
+      </div>
+
       <span class="ws-status" :data-on="wsConnected ? 'true' : 'false'">
         <span class="ws-dot" />
-        <template v-if="wsConnected">
-          онлайн: {{ wsPeers }} {{ wsPeers === 1 ? 'участник' : 'участников' }}
-        </template>
-        <template v-else>нет соединения, переподключаемся…</template>
+        <template v-if="wsConnected">онлайн</template>
+        <template v-else>нет соединения</template>
       </span>
     </div>
 
@@ -77,9 +135,7 @@ function isActive(day: DayKey): boolean {
         class="history-chip"
         :aria-current="r.id === serviceId ? 'true' : 'false'"
         @click="openByChip(r.id)"
-      >
-        {{ formatDateLabel(r.date) }} · {{ dayLabel(r.day) }}
-      </button>
+      >{{ chipLabel(r) }}</button>
     </div>
   </div>
 </template>

@@ -6,8 +6,9 @@ import type { ModuleKey } from '~~/shared/types'
 
 const store = useChecklistStore()
 const {
-  templates, editMode, serviceId, date, outfit, checks, recent,
-  techDone, techTotal, currentDayKey, wsConnected, wsPeers,
+  templates, editMode, serviceId, date, slot, dayServices,
+  outfit, checks, recent,
+  techDone, techTotal, currentDayKey, wsConnected, localName,
 } = storeToRefs(store)
 
 onMounted(() => {
@@ -16,15 +17,33 @@ onMounted(() => {
 
 async function changeDate(v: string) {
   if (!v) return
-  await store.loadService(v)
+  await store.loadDate(v)
 }
 async function changeOutfit(v: string) {
   store.outfit = v
   await store.saveServiceMeta()
 }
+async function selectSlot(s: number) {
+  await store.selectSlot(s)
+}
+async function addService() {
+  await store.addService()
+}
 async function openService(id: string) {
-  const d = id.split('_')[0]
-  await store.loadService(d)
+  // id = "YYYY-MM-DD" или "YYYY-MM-DD#N"
+  const m = /^(\d{4}-\d{2}-\d{2})(?:#(\d+))?$/.exec(id)
+  if (!m) return
+  const d = m[1]
+  const s = m[2] ? parseInt(m[2], 10) : 1
+  // если это не текущая дата — сначала загрузим её список собраний
+  if (d !== date.value) {
+    await store.loadDate(d, s)
+  } else {
+    await store.selectSlot(s)
+  }
+}
+function changeName(v: string) {
+  store.setName(v)
 }
 function toggleEdit(key: ModuleKey) {
   store.editMode[key] = !store.editMode[key]
@@ -60,16 +79,21 @@ async function addItem(key: ModuleKey, grp: string, label: string) {
     <ServiceDeck
       :date="date"
       :current-day="currentDayKey"
+      :slot="slot"
+      :day-services="dayServices"
       :outfit="outfit"
       :recent="recent"
       :service-id="serviceId"
       :tech-done="techDone"
       :tech-total="techTotal"
       :ws-connected="wsConnected"
-      :ws-peers="wsPeers"
+      :user-name="localName"
       @change-date="changeDate"
       @change-outfit="changeOutfit"
+      @select-slot="selectSlot"
+      @add-service="addService"
       @open-service="openService"
+      @change-name="changeName"
     />
 
     <div class="modules">

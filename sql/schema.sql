@@ -1,5 +1,12 @@
 -- Пульт медиаслужения: схема БД
-CREATE TABLE IF NOT EXISTS templates (
+-- В один день может быть несколько собраний (slot = 1, 2, 3, ...).
+-- Колонки day нет: день недели вычисляется на клиенте из date.
+
+DROP TABLE IF EXISTS checks;
+DROP TABLE IF EXISTS services;
+DROP TABLE IF EXISTS templates;
+
+CREATE TABLE templates (
   id           TEXT PRIMARY KEY,
   module       TEXT NOT NULL CHECK (module IN ('tech')),
   grp          TEXT NOT NULL,
@@ -8,19 +15,20 @@ CREATE TABLE IF NOT EXISTS templates (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_templates_module_pos ON templates(module, position);
+CREATE INDEX idx_templates_module_pos ON templates(module, position);
 
-CREATE TABLE IF NOT EXISTS services (
-  id           TEXT PRIMARY KEY,
+CREATE TABLE services (
+  id           TEXT PRIMARY KEY,                 -- "YYYY-MM-DD" для slot=1, "YYYY-MM-DD#N" для slot=N
   date         DATE NOT NULL,
-  day          TEXT NOT NULL CHECK (day IN ('monday','tuesday','wednesday','thursday','friday','saturday','sunday')),
+  slot         INTEGER NOT NULL DEFAULT 1 CHECK (slot >= 1),
   outfit       TEXT NOT NULL DEFAULT '',
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (date, slot)
 );
-CREATE INDEX IF NOT EXISTS idx_services_date ON services(date DESC);
+CREATE INDEX idx_services_date_slot ON services(date DESC, slot);
 
-CREATE TABLE IF NOT EXISTS checks (
+CREATE TABLE checks (
   service_id   TEXT NOT NULL REFERENCES services(id) ON DELETE CASCADE,
   template_id  TEXT NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
   done         BOOLEAN NOT NULL DEFAULT false,
@@ -30,7 +38,7 @@ CREATE TABLE IF NOT EXISTS checks (
   PRIMARY KEY (service_id, template_id)
 );
 
--- ---------- Сиды: только модуль tech ----------
+-- ---------- Сиды ----------
 INSERT INTO templates (id, module, grp, label, position) VALUES
   ('t1','tech','Звук','Resolume Arena запущен и стабильно работает',1),
   ('t2','tech','Звук','Dante-адаптер подключён и определяется в Resolume',2),
@@ -46,5 +54,4 @@ INSERT INTO templates (id, module, grp, label, position) VALUES
   ('t12','tech','Трансляция','Закрывающие титры готовы к концу собрания',12),
   ('t13','tech','Трансляция','QR-код пожертвования на трансляции — только в правом нижнем углу, не перекрывает картинку',13),
   ('t14','tech','Трансляция','QR-код пожертвования на экранах в зале — на весь экран',14),
-  ('t15','tech','Трансляция','Текст (слова/Библия) на трансляции мельче, чем на экранах в зале',15)
-ON CONFLICT (id) DO NOTHING;
+  ('t15','tech','Трансляция','Текст (слова/Библия) на трансляции мельче, чем на экранах в зале',15);

@@ -1,29 +1,30 @@
 import { query } from '~~/server/utils/db'
 import { broadcastToService } from '~~/server/utils/ws-hub'
-import type { DayKey } from '~~/shared/types'
+import { parseServiceId } from '~~/server/utils/services'
 
 interface Body {
   templateId: string
   done: boolean
   by?: string | null
   at?: string | null
-  date?: string
-  day?: DayKey
 }
 
 export default defineEventHandler(async (event) => {
   const serviceId = getRouterParam(event, 'id')
   if (!serviceId) throw createError({ statusCode: 400, statusMessage: 'serviceId required' })
+
+  const parsed = parseServiceId(serviceId)
+  if (!parsed) throw createError({ statusCode: 400, statusMessage: 'invalid id format' })
+
   const body = await readBody<Body>(event)
   if (!body?.templateId) throw createError({ statusCode: 400, statusMessage: 'templateId required' })
 
-  if (body.date && body.day) {
-    await query(
-      `INSERT INTO services (id, date, day) VALUES ($1,$2,$3)
-       ON CONFLICT (id) DO NOTHING`,
-      [serviceId, body.date, body.day]
-    )
-  }
+  // гарантируем строку services (id → date+slot выводим из самого id)
+  await query(
+    `INSERT INTO services (id, date, slot) VALUES ($1, $2, $3)
+     ON CONFLICT (id) DO NOTHING`,
+    [serviceId, parsed.date, parsed.slot]
+  )
 
   const rows = await query<{ updated_at: Date }>(
     `INSERT INTO checks (service_id, template_id, done, by_name, at_label, updated_at)

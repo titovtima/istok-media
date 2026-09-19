@@ -1,42 +1,42 @@
 import { query } from '~~/server/utils/db'
 import { broadcastToService } from '~~/server/utils/ws-hub'
-import type { DayKey } from '~~/shared/types'
+import { parseServiceId, toISODate } from '~~/server/utils/services'
 
-interface Body { date: string; day: DayKey; outfit?: string }
+interface Body { date: string; outfit?: string }
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'id required' })
-  const body = await readBody<Body>(event)
-  if (!body?.date || !body?.day) {
-    throw createError({ statusCode: 400, statusMessage: 'date and day required' })
-  }
 
-  const rows = await query<{ id: string; date: string | Date; day: DayKey; outfit: string }>(
-    `INSERT INTO services (id, date, day, outfit)
+  const parsed = parseServiceId(id)
+  if (!parsed) throw createError({ statusCode: 400, statusMessage: 'invalid id format' })
+
+  const body = await readBody<Body>(event)
+  if (!body?.date) throw createError({ statusCode: 400, statusMessage: 'date required' })
+
+  // date в URL имеет приоритет, но сверяем с тем, что прислал клиент
+  const rows = await query<{ id: string; date: Date | string; slot: number; outfit: string }>(
+    `INSERT INTO services (id, date, slot, outfit)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (id) DO UPDATE
        SET outfit = EXCLUDED.outfit, updated_at = now()
-     RETURNING id, date, day, outfit`,
-    [id, body.date, body.day, body.outfit ?? '']
+     RETURNING id, date, slot, outfit`,
+    [id, parsed.date, parsed.slot, body.outfit ?? '']
   )
 
   const row = rows[0]
   if (row) {
-    const iso = typeof row.date === 'string' ? row.date.slice(0, 10) : isoDate(row.date)
     broadcastToService(id, {
       type: 'service-meta-update',
       serviceId: id,
-      date: iso,
-      day: row.day,
+      date: toISODate(row.date),
       outfit: row.outfit,
     })
   }
-
-  return rows[0]
+  return {
+    id: row.id,
+    date: toISODate(row.date),
+    slot: row.slot,
+    outfit: row.outfit,
+  }
 })
-
-function isoDate(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}

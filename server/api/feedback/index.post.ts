@@ -1,0 +1,59 @@
+import { query } from '~~/server/utils/db'
+import { broadcastToService } from '~~/server/utils/ws-hub'
+import type { FeedbackEntry, FeedbackService } from '~~/shared/types'
+import { formatShort } from './index.get'
+
+interface Body {
+  name: string
+  service: FeedbackService
+  otherNote?: string
+  description: string
+}
+
+const ALLOWED: FeedbackService[] = ['vosslavlenie','poryadok','uborka','media','other']
+
+export default defineEventHandler(async (event): Promise<FeedbackEntry> => {
+  const body = await readBody<Body>(event)
+  const name = (body?.name || '').trim()
+  const description = (body?.description || '').trim()
+  const otherNote = (body?.otherNote || '').trim()
+  const service = body?.service
+
+  if (!name) throw createError({ statusCode: 400, statusMessage: 'name required' })
+  if (!description) throw createError({ statusCode: 400, statusMessage: 'description required' })
+  if (!service || !ALLOWED.includes(service)) {
+    throw createError({ statusCode: 400, statusMessage: 'invalid service' })
+  }
+
+  const id = 'fb_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+
+  const rows = await query<{
+    id: string; name: string; service: FeedbackService; other_note: string;
+    description: string; resolved: boolean; resolved_by: string | null;
+    resolved_at: string | null; created_at: Date | string;
+  }>(
+    `INSERT INTO feedback (id, name, service, other_note, description)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, name, service, other_note, description,
+               resolved, resolved_by, resolved_at, created_at`,
+    [id, name, service, otherNote, description]
+  )
+
+  const r = rows[0]
+  const iso = typeof r.created_at === 'string' ? r.created_at : r.created_at.toISOString()
+  const entry: FeedbackEntry = {
+    id: r.id,
+    name: r.name,
+    service: r.service,
+    otherNote: r.other_note,
+    description: r.description,
+    resolved: r.resolved,
+    resolvedBy: r.resolved_by,
+    resolvedAt: r.resolved_at,
+    createdAt: iso,
+    createdLabel: formatShort(iso),
+  }
+
+  broadcastToService('feedback', { type: 'feedback-created', entry })
+  return entry
+})

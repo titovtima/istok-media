@@ -6,6 +6,7 @@ import type {
 } from '~~/shared/types'
 
 const NAME_KEY = 'mc_name'
+const CHURCH_NAME = 'Источник Жизни'
 
 const RESOURCE_LABEL: Record<BookingResource, string> = {
   small: 'малый зал',
@@ -35,10 +36,29 @@ onMounted(() => {
   try { viewerName.value = localStorage.getItem(NAME_KEY) || '' } catch {}
 })
 
+// ---------------- Понедельник как начало недели ----------------
+// Возвращает понедельник той недели, в которой находится дата `d`.
+function mondayOf(d: Date): string {
+  const x = new Date(d)
+  const dow = x.getDay() // 0=вс, 1=пн, ...
+  const diff = (dow === 0 ? -6 : 1 - dow) // сдвиг к понедельнику
+  x.setDate(x.getDate() + diff)
+  return isoDate(x)
+}
+function isoDate(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`
+}
+function addDaysISO(iso: string, n: number): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const dd = new Date(y, m-1, d); dd.setDate(dd.getDate()+n)
+  return isoDate(dd)
+}
+
 // ---------------- Форма ----------------
 const form = reactive({
   mode: 'single' as 'single' | 'weekly' | 'biweekly',
-  date: todayISO(),
+  date: isoDate(new Date()),
   start: '10:00',
   end: '12:00',
   resource: null as BookingResource | null,
@@ -54,18 +74,24 @@ const conflictList = ref<BookingWithAttendance[]>([])
 const pendingConfirm = ref(false)
 
 watch(() => form.organizerType, (t) => {
-  if (t === 'person' && viewerName.value) form.organizerName = viewerName.value
-  if (t !== 'person') form.organizerId = null
-  if (t === 'ministry') form.organizerName = form.organizerName || MINISTRIES[0].label
-  if (t === 'church') form.organizerName = form.organizerName || 'церковь'
+  if (t === 'person') {
+    form.organizerName = viewerName.value || form.organizerName
+    form.organizerId = null
+  } else if (t === 'ministry') {
+    form.organizerId = form.organizerId || MINISTRIES[0].id
+    form.organizerName = MINISTRIES.find(m => m.id === form.organizerId)?.label || MINISTRIES[0].label
+  } else if (t === 'church') {
+    form.organizerId = null
+    form.organizerName = CHURCH_NAME
+  }
 })
 watch([() => form.date, () => form.start, () => form.end, () => form.resource], () => {
   conflictList.value = []
   pendingConfirm.value = false
 })
 
-// ---------------- Диапазон ----------------
-const rangeStart = ref(todayISO())
+// ---------------- Диапазон (неделя Пн–Вс) ----------------
+const rangeStart = ref(mondayOf(new Date()))
 const rangeEnd = computed(() => addDaysISO(rangeStart.value, 6))
 const rangeLabel = computed(() => formatRange(rangeStart.value, rangeEnd.value))
 const filter = ref<'all' | BookingResource>('all')
@@ -101,13 +127,10 @@ async function changeRange(deltaWeeks: number) {
   await loadRange()
 }
 async function goToday() {
-  rangeStart.value = todayISO()
+  rangeStart.value = mondayOf(new Date())
   await loadRange()
 }
 
-// Смена имени в поле «Кто отмечается»: сохраняем в localStorage
-// и перечитываем диапазон — теперь «моя» отметка ищется по новому имени,
-// кнопки визуально сбрасываются.
 async function persistViewerName() {
   const n = viewerName.value.trim()
   try {
@@ -149,7 +172,6 @@ function applyAttendance(msg: { eventKey: string; name: string; clientId: string
     else if (msg.status === 'no') d.attendance.no.push(rec)
     else d.attendance.maybe.push(rec)
   }
-  // «моя» отметка — если имя совпадает с моим и (clientId совпал или пуст).
   if (msg.name === viewerName.value.trim() && (!msg.clientId || msg.clientId === clientId.value)) {
     d.attendance.mine = msg.status
   }
@@ -164,7 +186,12 @@ async function submit() {
   if (form.start >= form.end) { setErr('Конец должен быть позже начала.'); return }
   if (!form.resource) { setErr('Выберите помещение.'); return }
   if (!form.title.trim()) { setErr('Опишите, что происходит.'); return }
-  if (!form.organizerName.trim()) { setErr('Укажите, кто организует.'); return }
+
+  // organizerName: для церкви — фиксированное, для остальных — из поля.
+  const organizerName = form.organizerType === 'church'
+    ? CHURCH_NAME
+    : form.organizerName.trim()
+  if (!organizerName) { setErr('Укажите, кто организует.'); return }
 
   if (form.mode === 'single' && !pendingConfirm.value) {
     const conflicts = days.value.filter(d =>
@@ -180,8 +207,8 @@ async function submit() {
     }
   }
 
-  if (form.organizerType === 'person' && viewerName.value !== form.organizerName.trim()) {
-    viewerName.value = form.organizerName.trim()
+  if (form.organizerType === 'person' && viewerName.value !== organizerName) {
+    viewerName.value = organizerName
     try { localStorage.setItem(NAME_KEY, viewerName.value) } catch {}
   }
 
@@ -196,8 +223,12 @@ async function submit() {
         resource: form.resource,
         title: form.title.trim(),
         organizerType: form.organizerType,
-        organizerName: form.organizerName.trim(),
-        organizerId: form.organizerType === 'person' ? clientId.value : form.organizerId,
+        organizerName,
+        organizerId: form.organizerType === 'person'
+          ? clientId.value
+          : form.organizerType === 'ministry'
+            ? form.organizerId
+            : null,
         note: form.note.trim(),
         createdBy: clientId.value,
       },
@@ -256,22 +287,13 @@ async function setAttendance(b: BookingWithAttendance, status: AttendanceStatus)
     alert('Сначала введите имя в поле «Кто отмечается».')
     return
   }
-  // повторный клик по активной — снять отметку
   const next = b.attendance.mine === status ? null : status
-
-  // оптимистично
   const prev = { mine: b.attendance.mine }
   b.attendance.mine = next
-
   try {
     await $fetch('/api/attendance', {
       method: 'PUT',
-      body: {
-        eventKey: b.id,
-        name,
-        clientId: clientId.value,
-        status: next,
-      },
+      body: { eventKey: b.id, name, clientId: clientId.value, status: next },
     })
   } catch {
     b.attendance.mine = prev.mine
@@ -279,17 +301,6 @@ async function setAttendance(b: BookingWithAttendance, status: AttendanceStatus)
 }
 
 // ---------------- Хелперы ----------------
-function todayISO(): string {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`
-}
-function addDaysISO(iso: string, n: number): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  const dd = new Date(y, m-1, d); dd.setDate(dd.getDate()+n)
-  const p = (x: number) => String(x).padStart(2, '0')
-  return `${dd.getFullYear()}-${p(dd.getMonth()+1)}-${p(dd.getDate())}`
-}
 function formatRange(a: string, b: string): string {
   const [ya, ma, da] = a.split('-').map(Number)
   const [yb, mb, db] = b.split('-').map(Number)
@@ -314,7 +325,7 @@ function groupByDate(list: BookingWithAttendance[]): { date: string; items: Book
   return out
 }
 const grouped = computed(() => groupByDate(visibleDays.value))
-const todayStr = todayISO()
+const todayStr = isoDate(new Date())
 
 function attendanceSummaryLine(b: BookingWithAttendance): string {
   const y = b.attendance.yes.length
@@ -322,9 +333,9 @@ function attendanceSummaryLine(b: BookingWithAttendance): string {
   const m = b.attendance.maybe.length
   if (!y && !n && !m) return 'пока никто не отметился'
   const parts: string[] = []
-  if (y) parts.push(`идут ${y}`)
+  if (y) parts.push(`будут ${y}`)
   if (m) parts.push(`под вопросом ${m}`)
-  if (n) parts.push(`не идут ${n}`)
+  if (n) parts.push(`не будут ${n}`)
   return parts.join(' · ')
 }
 </script>
@@ -341,123 +352,10 @@ function attendanceSummaryLine(b: BookingWithAttendance): string {
       </p>
     </div>
 
-    <!-- ---------- Форма ---------- -->
-    <div class="card">
-      <h2>Новая бронь</h2>
-      <div class="form-grid">
-        <div class="field span-2">
-          <label>Тип брони</label>
-          <div class="pill-group">
-            <button type="button" :aria-pressed="form.mode==='single'" @click="form.mode='single'">разово</button>
-            <button type="button" :aria-pressed="form.mode==='weekly'" @click="form.mode='weekly'">каждую неделю</button>
-            <button type="button" :aria-pressed="form.mode==='biweekly'" @click="form.mode='biweekly'">через неделю</button>
-          </div>
-        </div>
-
-        <div class="field">
-          <label for="bk-date">{{ form.mode === 'single' ? 'Дата' : 'Первая дата' }}</label>
-          <input id="bk-date" type="date" v-model="form.date">
-        </div>
-        <div class="field" style="display:flex; gap:10px;">
-          <div style="flex:1;">
-            <label for="bk-start">Начало</label>
-            <input id="bk-start" type="time" v-model="form.start">
-          </div>
-          <div style="flex:1;">
-            <label for="bk-end">Конец</label>
-            <input id="bk-end" type="time" v-model="form.end">
-          </div>
-        </div>
-
-        <div class="field span-2">
-          <label>Помещение</label>
-          <div class="pill-group">
-            <button
-              v-for="r in (['small','big','studio'] as BookingResource[])"
-              :key="r"
-              type="button"
-              :class="['res-' + r]"
-              :aria-pressed="form.resource === r ? 'true' : 'false'"
-              @click="form.resource = r"
-            >{{ RESOURCE_LABEL[r] }}</button>
-          </div>
-        </div>
-
-        <div class="field span-2">
-          <label>От чьего имени</label>
-          <div class="pill-group">
-            <button
-              v-for="t in (['person','ministry','church'] as OrganizerType[])"
-              :key="t"
-              type="button"
-              :aria-pressed="form.organizerType === t ? 'true' : 'false'"
-              @click="form.organizerType = t"
-            >{{ ORGANIZER_LABEL[t] }}</button>
-          </div>
-        </div>
-
-        <div v-if="form.organizerType === 'ministry'" class="field span-2">
-          <label>Служение</label>
-          <div class="pill-group">
-            <button
-              v-for="m in MINISTRIES"
-              :key="m.id"
-              type="button"
-              :aria-pressed="form.organizerId === m.id ? 'true' : 'false'"
-              @click="form.organizerId = m.id; form.organizerName = m.label"
-            >{{ m.label }}</button>
-          </div>
-        </div>
-
-        <div class="field span-2">
-          <label for="bk-orgname">
-            {{ form.organizerType === 'person' ? 'ФИО' :
-               form.organizerType === 'ministry' ? 'Название служения' :
-               'Название церкви' }}
-          </label>
-          <input id="bk-orgname" type="text" v-model="form.organizerName"
-                 :placeholder="form.organizerType === 'church' ? 'например: источник жизни' : 'ФИО или название'">
-        </div>
-
-        <div class="field span-2">
-          <label for="bk-title">Что происходит</label>
-          <input id="bk-title" type="text" v-model="form.title"
-                 placeholder="напр. саундчек, утренняя молитва, конференция">
-        </div>
-
-        <div class="field span-2">
-          <label for="bk-note">Комментарий (необязательно)</label>
-          <input id="bk-note" type="text" v-model="form.note" placeholder="детали, если нужно">
-        </div>
-      </div>
-
-      <div v-if="conflictList.length" class="conflict-box">
-        <b>Пересечение по времени в этом же помещении:</b>
-        <ul style="margin:6px 0 0; padding-left:18px;">
-          <li v-for="c in conflictList" :key="c.id">
-            {{ c.start }}–{{ c.end }} — {{ c.title }} ({{ c.organizerName }})
-          </li>
-        </ul>
-        <div style="margin-top:8px;">Нажмите ещё раз, чтобы всё равно добавить.</div>
-      </div>
-
-      <div class="submit-row">
-        <button
-          type="button"
-          class="submit-btn"
-          :class="{ 'warn-btn': pendingConfirm }"
-          @click="submit"
-        >
-          {{ pendingConfirm ? 'всё равно добавить' : 'добавить бронь' }}
-        </button>
-        <span class="form-msg" :class="formMsgKind">{{ formMsg }}</span>
-      </div>
-    </div>
-
-    <!-- ---------- Список ---------- -->
+    <!-- ---------- Список (сверху) ---------- -->
     <div class="card">
       <div class="list-head">
-        <h2 style="margin:0;">Бронирования</h2>
+        <h2 style="margin:0;">Календарь</h2>
         <div class="range-nav">
           <button type="button" @click="changeRange(-1)">◀ неделя</button>
           <span class="range-label">{{ rangeLabel }}</span>
@@ -606,6 +504,123 @@ function attendanceSummaryLine(b: BookingWithAttendance): string {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- ---------- Форма (снизу) ---------- -->
+    <div class="card">
+      <h2>Новая бронь</h2>
+      <div class="form-grid">
+        <div class="field span-2">
+          <label>Тип брони</label>
+          <div class="pill-group">
+            <button type="button" :aria-pressed="form.mode==='single'" @click="form.mode='single'">разово</button>
+            <button type="button" :aria-pressed="form.mode==='weekly'" @click="form.mode='weekly'">каждую неделю</button>
+            <button type="button" :aria-pressed="form.mode==='biweekly'" @click="form.mode='biweekly'">через неделю</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="bk-date">{{ form.mode === 'single' ? 'Дата' : 'Первая дата' }}</label>
+          <input id="bk-date" type="date" v-model="form.date">
+        </div>
+        <div class="field" style="display:flex; gap:10px;">
+          <div style="flex:1;">
+            <label for="bk-start">Начало</label>
+            <input id="bk-start" type="time" v-model="form.start">
+          </div>
+          <div style="flex:1;">
+            <label for="bk-end">Конец</label>
+            <input id="bk-end" type="time" v-model="form.end">
+          </div>
+        </div>
+
+        <div class="field span-2">
+          <label>Помещение</label>
+          <div class="pill-group">
+            <button
+              v-for="r in (['small','big','studio'] as BookingResource[])"
+              :key="r"
+              type="button"
+              :class="['res-' + r]"
+              :aria-pressed="form.resource === r ? 'true' : 'false'"
+              @click="form.resource = r"
+            >{{ RESOURCE_LABEL[r] }}</button>
+          </div>
+        </div>
+
+        <div class="field span-2">
+          <label>От чьего имени</label>
+          <div class="pill-group">
+            <button
+              v-for="t in (['person','ministry','church'] as OrganizerType[])"
+              :key="t"
+              type="button"
+              :aria-pressed="form.organizerType === t ? 'true' : 'false'"
+              @click="form.organizerType = t"
+            >{{ ORGANIZER_LABEL[t] }}</button>
+          </div>
+        </div>
+
+        <div v-if="form.organizerType === 'ministry'" class="field span-2">
+          <label>Служение</label>
+          <div class="pill-group">
+            <button
+              v-for="m in MINISTRIES"
+              :key="m.id"
+              type="button"
+              :aria-pressed="form.organizerId === m.id ? 'true' : 'false'"
+              @click="form.organizerId = m.id; form.organizerName = m.label"
+            >{{ m.label }}</button>
+          </div>
+        </div>
+
+        <!-- Название церкви фиксированное: «Источник Жизни».
+             Для церкви поле ввода не показываем. -->
+        <div v-if="form.organizerType !== 'church'" class="field span-2">
+          <label for="bk-orgname">
+            {{ form.organizerType === 'person' ? 'ФИО' : 'Название служения' }}
+          </label>
+          <input id="bk-orgname" type="text" v-model="form.organizerName"
+                 placeholder="ФИО или название">
+        </div>
+        <div v-else class="field span-2">
+          <label>Церковь</label>
+          <div class="church-name">{{ CHURCH_NAME }}</div>
+        </div>
+
+        <div class="field span-2">
+          <label for="bk-title">Что происходит</label>
+          <input id="bk-title" type="text" v-model="form.title"
+                 placeholder="напр. саундчек, утренняя молитва, конференция">
+        </div>
+
+        <div class="field span-2">
+          <label for="bk-note">Комментарий (необязательно)</label>
+          <input id="bk-note" type="text" v-model="form.note" placeholder="детали, если нужно">
+        </div>
+      </div>
+
+      <div v-if="conflictList.length" class="conflict-box">
+        <b>Пересечение по времени в этом же помещении:</b>
+        <ul style="margin:6px 0 0; padding-left:18px;">
+          <li v-for="c in conflictList" :key="c.id">
+            {{ c.start }}–{{ c.end }} — {{ c.title }} ({{ c.organizerName }})
+          </li>
+        </ul>
+        <div style="margin-top:8px;">Нажмите ещё раз, чтобы всё равно добавить.</div>
+      </div>
+
+      <div class="submit-row">
+        <button
+          type="button"
+          class="submit-btn"
+          :class="{ 'warn-btn': pendingConfirm }"
+          @click="submit"
+        >
+          {{ pendingConfirm ? 'всё равно добавить' : 'добавить бронь' }}
+        </button>
+        <span class="form-msg" :class="formMsgKind">{{ formMsg }}</span>
       </div>
     </div>
 

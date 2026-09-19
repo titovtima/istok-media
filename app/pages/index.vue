@@ -49,6 +49,6 @@ const socket = useChecklistSocket()
       <template v-else>нет соединения</template>
     </div>
 
-    <footer>«источник жизни» · внутренние инструменты</footer>
+    <footer>«Источник Жизни» · внутренние инструменты</footer>
   </div>
 </template>

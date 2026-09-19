@@ -1,5 +1,5 @@
 <template>
-  <div class="brandbar">
+  <NuxtLink to="/" class="brandbar" aria-label="На главную">
     <svg
       class="logo"
       viewBox="0 0 162 44"
@@ -25,5 +25,5 @@
     </svg>
     <span class="divider" />
     <span class="label">медиа-служение</span>
-  </div>
+  </NuxtLink>
 </template>

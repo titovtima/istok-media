@@ -39,7 +39,12 @@ body{
   padding:20px 16px 60px;
 }
 .wrap{max-width:960px; margin:0 auto; display:flex; flex-direction:column; gap:18px;}
-.brandbar{display:flex; align-items:center; gap:12px;}
+.brandbar{
+  display:flex; align-items:center; gap:12px;
+  text-decoration:none; color:inherit; cursor:pointer;
+}
+.brandbar:hover .label{ color:var(--text); }
+.brandbar:focus-visible{ outline:2px solid var(--accent); outline-offset:4px; border-radius:4px; }
 .brandbar .logo{width:99px; height:27px; color:var(--text); flex:none;}
 .brandbar .divider{width:1px; height:20px; background:var(--border); flex:none;}
 .brandbar .label{font-family:'Anonymous Pro',monospace; font-size:12px; letter-spacing:.02em; text-transform:lowercase; color:var(--text-dim);}

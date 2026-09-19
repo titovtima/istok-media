@@ -36,12 +36,11 @@ onMounted(() => {
   try { viewerName.value = localStorage.getItem(NAME_KEY) || '' } catch {}
 })
 
-// ---------------- Понедельник как начало недели ----------------
-// Возвращает понедельник той недели, в которой находится дата `d`.
+// ---------------- Неделя с понедельника ----------------
 function mondayOf(d: Date): string {
   const x = new Date(d)
-  const dow = x.getDay() // 0=вс, 1=пн, ...
-  const diff = (dow === 0 ? -6 : 1 - dow) // сдвиг к понедельнику
+  const dow = x.getDay()
+  const diff = (dow === 0 ? -6 : 1 - dow)
   x.setDate(x.getDate() + diff)
   return isoDate(x)
 }
@@ -54,8 +53,12 @@ function addDaysISO(iso: string, n: number): string {
   const dd = new Date(y, m-1, d); dd.setDate(dd.getDate()+n)
   return isoDate(dd)
 }
+function weekdayOfISO(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m-1, d).getDay()
+}
 
-// ---------------- Форма ----------------
+// ---------------- Форма новой брони ----------------
 const form = reactive({
   mode: 'single' as 'single' | 'weekly' | 'biweekly',
   date: isoDate(new Date()),
@@ -90,7 +93,7 @@ watch([() => form.date, () => form.start, () => form.end, () => form.resource], 
   pendingConfirm.value = false
 })
 
-// ---------------- Диапазон (неделя Пн–Вс) ----------------
+// ---------------- Диапазон ----------------
 const rangeStart = ref(mondayOf(new Date()))
 const rangeEnd = computed(() => addDaysISO(rangeStart.value, 6))
 const rangeLabel = computed(() => formatRange(rangeStart.value, rangeEnd.value))
@@ -107,6 +110,147 @@ function toggleAttendanceOpen(id: string) {
   const s = new Set(openAttendance.value)
   if (s.has(id)) s.delete(id); else s.add(id)
   openAttendance.value = s
+}
+
+// ---------------- Редактирование ----------------
+// editId — id той брони, которая сейчас редактируется (или null).
+// editDraft — локальная копия полей.
+// editScope — 'single' | 'series' | 'date':
+//   • 'single' — разовая бронь
+//   • 'series' — правка всей серии
+//   • 'date'   — правка только этой даты (создаст разовую поверх серии)
+// Для виртуальной серии пользователь выбирает scope; для разовой scope='single'.
+const editId = ref<string | null>(null)
+const editScope = ref<'single' | 'series' | 'date'>('single')
+const editMsg = ref('')
+const editMsgKind = ref<'' | 'ok' | 'error'>('')
+const editDraft = reactive({
+  date: '',
+  start: '',
+  end: '',
+  resource: 'small' as BookingResource,
+  title: '',
+  organizerType: 'person' as OrganizerType,
+  organizerName: '',
+  organizerId: null as string | null,
+  note: '',
+  weekday: 0,
+  repeat: 'weekly' as 'weekly' | 'biweekly',
+})
+
+function startEdit(b: BookingWithAttendance) {
+  editId.value = b.id
+  editMsg.value = ''
+  editMsgKind.value = ''
+  if (b.seriesId) {
+    // правка серии или только этой даты
+    editScope.value = 'series'
+    editDraft.weekday = weekdayOfISO(b.date)
+    editDraft.repeat = 'weekly' // подтянем настоящий при первом сохранении
+    // Для полей, которые совпадают с шаблоном, значения возьмём из b:
+    editDraft.date = b.date
+    editDraft.start = b.start
+    editDraft.end = b.end
+    editDraft.resource = b.resource
+    editDraft.title = b.title
+    editDraft.organizerType = b.organizerType
+    editDraft.organizerName = b.organizerName
+    editDraft.organizerId = b.organizerId
+    editDraft.note = b.note
+    // Прочитаем настоящий repeat серии с сервера
+    $fetch<{ repeat: 'weekly' | 'biweekly' }>(`/api/series/${b.seriesId}`)
+      .then(s => { editDraft.repeat = s.repeat })
+      .catch(() => {})
+  } else {
+    editScope.value = 'single'
+    editDraft.date = b.date
+    editDraft.start = b.start
+    editDraft.end = b.end
+    editDraft.resource = b.resource
+    editDraft.title = b.title
+    editDraft.organizerType = b.organizerType
+    editDraft.organizerName = b.organizerName
+    editDraft.organizerId = b.organizerId
+    editDraft.note = b.note
+  }
+}
+
+function cancelEdit() {
+  editId.value = null
+  editMsg.value = ''
+  editMsgKind.value = ''
+}
+
+async function saveEdit(b: BookingWithAttendance) {
+  editMsg.value = ''
+  editMsgKind.value = ''
+  // простая валидация
+  if (editDraft.start >= editDraft.end) { editMsg.value = 'Конец должен быть позже начала.'; editMsgKind.value = 'error'; return }
+  if (!editDraft.title.trim()) { editMsg.value = 'Заполните «Что происходит».'; editMsgKind.value = 'error'; return }
+
+  const organizerName = editDraft.organizerType === 'church'
+    ? CHURCH_NAME
+    : editDraft.organizerName.trim()
+  if (!organizerName) { editMsg.value = 'Укажите, кто организует.'; editMsgKind.value = 'error'; return }
+
+  try {
+    if (!b.seriesId) {
+      // разовая
+      const id = b.id.slice('booking:'.length)
+      await $fetch(`/api/bookings/${id}`, {
+        method: 'PATCH',
+        body: {
+          date: editDraft.date,
+          start: editDraft.start,
+          end: editDraft.end,
+          resource: editDraft.resource,
+          title: editDraft.title.trim(),
+          organizerType: editDraft.organizerType,
+          organizerName,
+          organizerId: editDraft.organizerType === 'person' ? null : editDraft.organizerId,
+          note: editDraft.note.trim(),
+        },
+      })
+    } else if (editScope.value === 'series') {
+      await $fetch(`/api/series/${b.seriesId}`, {
+        method: 'PATCH',
+        body: {
+          weekday: editDraft.weekday,
+          start: editDraft.start,
+          end: editDraft.end,
+          resource: editDraft.resource,
+          title: editDraft.title.trim(),
+          organizerType: editDraft.organizerType,
+          organizerName,
+          organizerId: editDraft.organizerType === 'person' ? null : editDraft.organizerId,
+          note: editDraft.note.trim(),
+          repeat: editDraft.repeat,
+        },
+      })
+    } else {
+      // 'date' — разовая поверх серии + exception
+      await $fetch(`/api/series/${b.seriesId}/override`, {
+        method: 'POST',
+        body: {
+          date: editDraft.date,
+          start: editDraft.start,
+          end: editDraft.end,
+          resource: editDraft.resource,
+          title: editDraft.title.trim(),
+          organizerType: editDraft.organizerType,
+          organizerName,
+          organizerId: editDraft.organizerType === 'person' ? null : editDraft.organizerId,
+          note: editDraft.note.trim(),
+          createdBy: clientId.value,
+        },
+      })
+    }
+    cancelEdit()
+    await loadRange()
+  } catch (e: any) {
+    editMsg.value = e?.data?.statusMessage || 'Не удалось сохранить изменения.'
+    editMsgKind.value = 'error'
+  }
 }
 
 // ---------------- Загрузка ----------------
@@ -177,7 +321,7 @@ function applyAttendance(msg: { eventKey: string; name: string; clientId: string
   }
 }
 
-// ---------------- Отправка формы ----------------
+// ---------------- Отправка новой брони ----------------
 async function submit() {
   formMsg.value = ''
   formMsgKind.value = ''
@@ -187,7 +331,6 @@ async function submit() {
   if (!form.resource) { setErr('Выберите помещение.'); return }
   if (!form.title.trim()) { setErr('Опишите, что происходит.'); return }
 
-  // organizerName: для церкви — фиксированное, для остальных — из поля.
   const organizerName = form.organizerType === 'church'
     ? CHURCH_NAME
     : form.organizerName.trim()
@@ -248,31 +391,24 @@ async function submit() {
 function setErr(t: string) { formMsg.value = t; formMsgKind.value = 'error' }
 function timesOverlap(a1: string, a2: string, b1: string, b2: string) { return a1 < b2 && b1 < a2 }
 
-// ---------------- Отмена ----------------
+// ---------------- Удаление и отмена ----------------
 async function cancelBooking(b: BookingWithAttendance) {
   if (b.seriesId) {
     if (!confirm('Отменить это собрание только на выбранную дату? Его можно будет вернуть.')) return
-    await $fetch(`/api/series/${b.seriesId}/skip`, {
-      method: 'POST',
-      body: { date: b.date },
-    })
+    await $fetch(`/api/series/${b.seriesId}/skip`, { method: 'POST', body: { date: b.date } })
   } else {
     if (!confirm('Удалить это бронирование? Оно исчезнет совсем.')) return
     const id = b.id.slice('booking:'.length)
     await $fetch(`/api/bookings/${id}`, { method: 'DELETE' })
   }
+  if (editId.value === b.id) cancelEdit()
   await loadRange()
 }
-
 async function unskipSeries(b: BookingWithAttendance) {
   if (!b.seriesId) return
-  await $fetch(`/api/series/${b.seriesId}/unskip`, {
-    method: 'POST',
-    body: { date: b.date },
-  })
+  await $fetch(`/api/series/${b.seriesId}/unskip`, { method: 'POST', body: { date: b.date } })
   await loadRange()
 }
-
 async function cancelSeries(b: BookingWithAttendance) {
   if (!b.seriesId) return
   if (!confirm('Отменить серию целиком, начиная с этой даты и дальше?')) return
@@ -338,6 +474,17 @@ function attendanceSummaryLine(b: BookingWithAttendance): string {
   if (n) parts.push(`не будут ${n}`)
   return parts.join(' · ')
 }
+
+// Названия для weekday-селекта в режиме правки серии
+const WEEKDAY_OPTIONS = [
+  { value: 1, label: 'понедельник' },
+  { value: 2, label: 'вторник' },
+  { value: 3, label: 'среда' },
+  { value: 4, label: 'четверг' },
+  { value: 5, label: 'пятница' },
+  { value: 6, label: 'суббота' },
+  { value: 0, label: 'воскресенье' },
+]
 </script>
 
 <template>
@@ -416,39 +563,37 @@ function attendanceSummaryLine(b: BookingWithAttendance): string {
             <!-- Присутствие -->
             <div class="attendance" v-if="!b.cancelled">
               <button
-                type="button"
-                class="att-btn att-yes"
+                type="button" class="att-btn att-yes"
                 :aria-pressed="b.attendance.mine === 'yes' ? 'true' : 'false'"
-                @click="setAttendance(b, 'yes')"
-                title="будет"
+                @click="setAttendance(b, 'yes')" title="будет"
               >+</button>
               <button
-                type="button"
-                class="att-btn att-maybe"
+                type="button" class="att-btn att-maybe"
                 :aria-pressed="b.attendance.mine === 'maybe' ? 'true' : 'false'"
-                @click="setAttendance(b, 'maybe')"
-                title="под вопросом"
+                @click="setAttendance(b, 'maybe')" title="под вопросом"
               >?</button>
               <button
-                type="button"
-                class="att-btn att-no"
+                type="button" class="att-btn att-no"
                 :aria-pressed="b.attendance.mine === 'no' ? 'true' : 'false'"
-                @click="setAttendance(b, 'no')"
-                title="не будет"
+                @click="setAttendance(b, 'no')" title="не будет"
               >−</button>
 
-              <button
-                type="button"
-                class="att-summary"
-                @click="toggleAttendanceOpen(b.id)"
-              >
+              <button type="button" class="att-summary" @click="toggleAttendanceOpen(b.id)">
                 {{ attendanceSummaryLine(b) }}
                 <span class="caret">{{ openAttendance.has(b.id) ? '▾' : '▸' }}</span>
               </button>
             </div>
 
-            <!-- Действия: удалить разовую, отменить на дату, вернуть, отменить серию -->
+            <!-- Действия -->
             <div class="actions-row" v-if="!b.cancelled || b.seriesId">
+              <button
+                v-if="!b.cancelled"
+                type="button"
+                class="icon-btn"
+                title="Редактировать"
+                @click="startEdit(b)"
+              >✎ редактировать</button>
+
               <button
                 v-if="!b.seriesId"
                 type="button"
@@ -482,6 +627,124 @@ function attendanceSummaryLine(b: BookingWithAttendance): string {
                   @click="cancelSeries(b)"
                 >✕ серию</button>
               </template>
+            </div>
+
+            <!-- Инлайн-редактирование -->
+            <div v-if="editId === b.id" class="edit-panel">
+              <!-- выбор области для серии -->
+              <div v-if="b.seriesId" class="field">
+                <label>Что редактируем</label>
+                <div class="pill-group">
+                  <button type="button"
+                    :aria-pressed="editScope==='series'"
+                    @click="editScope='series'"
+                  >всю серию</button>
+                  <button type="button"
+                    :aria-pressed="editScope==='date'"
+                    @click="editScope='date'"
+                  >только эту дату</button>
+                </div>
+              </div>
+
+              <div class="edit-grid">
+                <!-- Дата — только для разовой или при scope='date' -->
+                <div v-if="!b.seriesId || editScope==='date'" class="field">
+                  <label>Дата</label>
+                  <input type="date" v-model="editDraft.date">
+                </div>
+                <!-- День недели — для серии -->
+                <div v-else class="field">
+                  <label>День недели</label>
+                  <select v-model.number="editDraft.weekday">
+                    <option v-for="w in WEEKDAY_OPTIONS" :key="w.value" :value="w.value">{{ w.label }}</option>
+                  </select>
+                </div>
+
+                <div class="field" style="display:flex; gap:8px;">
+                  <div style="flex:1;">
+                    <label>Начало</label>
+                    <input type="time" v-model="editDraft.start">
+                  </div>
+                  <div style="flex:1;">
+                    <label>Конец</label>
+                    <input type="time" v-model="editDraft.end">
+                  </div>
+                </div>
+
+                <div class="field span-2">
+                  <label>Помещение</label>
+                  <div class="pill-group">
+                    <button
+                      v-for="r in (['small','big','studio'] as BookingResource[])"
+                      :key="r"
+                      type="button"
+                      :class="['res-' + r]"
+                      :aria-pressed="editDraft.resource === r ? 'true' : 'false'"
+                      @click="editDraft.resource = r"
+                    >{{ RESOURCE_LABEL[r] }}</button>
+                  </div>
+                </div>
+
+                <div class="field span-2">
+                  <label>От чьего имени</label>
+                  <div class="pill-group">
+                    <button
+                      v-for="t in (['person','ministry','church'] as OrganizerType[])"
+                      :key="t"
+                      type="button"
+                      :aria-pressed="editDraft.organizerType === t ? 'true' : 'false'"
+                      @click="editDraft.organizerType = t; editDraft.organizerName = t === 'church' ? CHURCH_NAME : editDraft.organizerName"
+                    >{{ ORGANIZER_LABEL[t] }}</button>
+                  </div>
+                </div>
+
+                <div v-if="editDraft.organizerType === 'ministry'" class="field span-2">
+                  <label>Служение</label>
+                  <div class="pill-group">
+                    <button
+                      v-for="m in MINISTRIES"
+                      :key="m.id"
+                      type="button"
+                      :aria-pressed="editDraft.organizerId === m.id ? 'true' : 'false'"
+                      @click="editDraft.organizerId = m.id; editDraft.organizerName = m.label"
+                    >{{ m.label }}</button>
+                  </div>
+                </div>
+
+                <div v-if="editDraft.organizerType !== 'church'" class="field span-2">
+                  <label>{{ editDraft.organizerType === 'person' ? 'ФИО' : 'Название служения' }}</label>
+                  <input type="text" v-model="editDraft.organizerName" placeholder="ФИО или название">
+                </div>
+                <div v-else class="field span-2">
+                  <label>Церковь</label>
+                  <div class="church-name">{{ CHURCH_NAME }}</div>
+                </div>
+
+                <div class="field span-2">
+                  <label>Что происходит</label>
+                  <input type="text" v-model="editDraft.title" placeholder="напр. саундчек, молитва">
+                </div>
+
+                <div class="field span-2">
+                  <label>Комментарий</label>
+                  <input type="text" v-model="editDraft.note" placeholder="детали, если нужно">
+                </div>
+
+                <!-- повтор — только для серии -->
+                <div v-if="b.seriesId && editScope==='series'" class="field span-2">
+                  <label>Периодичность</label>
+                  <div class="pill-group">
+                    <button type="button" :aria-pressed="editDraft.repeat==='weekly'" @click="editDraft.repeat='weekly'">каждую неделю</button>
+                    <button type="button" :aria-pressed="editDraft.repeat==='biweekly'" @click="editDraft.repeat='biweekly'">через неделю</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="submit-row">
+                <button type="button" class="submit-btn" @click="saveEdit(b)">сохранить</button>
+                <button type="button" class="icon-btn" @click="cancelEdit">отмена</button>
+                <span class="form-msg" :class="editMsgKind">{{ editMsg }}</span>
+              </div>
             </div>
 
             <!-- Раскрытый список присутствия -->
@@ -575,8 +838,6 @@ function attendanceSummaryLine(b: BookingWithAttendance): string {
           </div>
         </div>
 
-        <!-- Название церкви фиксированное: «Источник Жизни».
-             Для церкви поле ввода не показываем. -->
         <div v-if="form.organizerType !== 'church'" class="field span-2">
           <label for="bk-orgname">
             {{ form.organizerType === 'person' ? 'ФИО' : 'Название служения' }}

@@ -24,6 +24,7 @@ const emit = defineEmits<{
   (e: 'add-service'): void
   (e: 'open-service', id: string): void
   (e: 'change-name', v: string): void
+  (e: 'delete-service', id: string): void
 }>()
 
 function onDate(ev: Event) {
@@ -38,6 +39,12 @@ function onName(ev: Event) {
 function openByChip(id: string) {
   emit('open-service', id)
 }
+function requestDelete(r: RecentService) {
+  const label = `${formatDateLabel(r.date)} · ${dayLabel(dayKeyForDate(r.date))}` +
+    (r.slot > 1 ? ` · №${r.slot}` : '')
+  if (!confirm(`Удалить собрание «${label}»? Все отметки будут потеряны.`)) return
+  emit('delete-service', r.id)
+}
 function isActive(day: DayKey): boolean {
   return props.currentDay === day
 }
@@ -50,7 +57,6 @@ function commitName() {
   }
 }
 
-// подпись для собрания в списке
 function slotLabel(slot: number): string {
   return slot === 1 ? 'собрание 1' : `собрание ${slot}`
 }
@@ -128,14 +134,25 @@ function chipLabel(r: RecentService): string {
     </div>
 
     <div v-if="recent.length" class="history">
-      <button
+      <span
         v-for="r in recent"
         :key="r.id"
-        type="button"
-        class="history-chip"
-        :aria-current="r.id === serviceId ? 'true' : 'false'"
-        @click="openByChip(r.id)"
-      >{{ chipLabel(r) }}</button>
+        class="history-chip-wrap"
+      >
+        <button
+          type="button"
+          class="history-chip"
+          :aria-current="r.id === serviceId ? 'true' : 'false'"
+          @click="openByChip(r.id)"
+        >{{ chipLabel(r) }}</button>
+        <button
+          type="button"
+          class="history-chip-remove"
+          title="Удалить собрание"
+          aria-label="Удалить собрание"
+          @click.stop="requestDelete(r)"
+        >✕</button>
+      </span>
     </div>
   </div>
 </template>

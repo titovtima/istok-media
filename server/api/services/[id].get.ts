@@ -1,17 +1,18 @@
 import { query } from '~~/server/utils/db'
-import { parseServiceId, toISODate } from '~~/server/utils/services'
+import { resolveServiceId, toISODate } from '~~/server/utils/services'
 import type { CheckEntry, ServiceRecord } from '~~/shared/types'
 
 export default defineEventHandler(async (event): Promise<ServiceRecord | null> => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'id required' })
 
-  const parsed = parseServiceId(id)
-  if (!parsed) throw createError({ statusCode: 400, statusMessage: 'invalid id format' })
+  // Находим реальный id в БД (терпимо к '~'/'#').
+  const resolved = await resolveServiceId(id)
+  if (!resolved) return null
 
   const svc = await query<{ id: string; date: Date | string; slot: number; outfit: string }>(
     `SELECT id, date, slot, outfit FROM services WHERE id = $1`,
-    [id]
+    [resolved.id]
   )
   if (!svc.length) return null
 
@@ -19,7 +20,7 @@ export default defineEventHandler(async (event): Promise<ServiceRecord | null> =
     template_id: string; done: boolean; by_name: string | null; at_label: string | null
   }>(
     `SELECT template_id, done, by_name, at_label FROM checks WHERE service_id = $1`,
-    [id]
+    [resolved.id]
   )
 
   const checks: Record<string, CheckEntry> = {}

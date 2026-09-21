@@ -16,7 +16,7 @@ const socket = useChecklistSocket()
 
     <nav class="home-menu">
       <NuxtLink to="/checklist" class="menu-card">
-        <div class="menu-title">Пульт медиаслужения</div>
+        <div class="menu-title">Чеклист</div>
         <div class="menu-desc">
           Чек-лист технической готовности перед собранием. Отметки синхронизируются
           между устройствами команды в реальном времени.

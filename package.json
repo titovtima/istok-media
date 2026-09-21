@@ -3,11 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "nuxt dev",
     "build": "nuxt build",
-    "preview": "nuxt preview",
+    "db:check-services": "node scripts/db-check-services.mjs",
+    "db:init": "node scripts/db-init.mjs",
+    "dev": "nuxt dev",
     "postinstall": "nuxt prepare",
-    "db:init": "node scripts/db-init.mjs"
+    "preview": "nuxt preview"
   },
   "dependencies": {
     "@pinia/nuxt": "^0.5.4",

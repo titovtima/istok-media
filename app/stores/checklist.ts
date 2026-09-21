@@ -9,16 +9,30 @@ import { dayKeyForDate } from '~/composables/useFormat'
 function pad2(n: number){ return n < 10 ? '0'+n : ''+n }
 function toISODate(d: Date){ return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()) }
 
-function nextWeekday(from: Date, targetDow: number){
+// Ближайшее прошедшее (или сегодняшнее) служение.
+// Служения — среда (3) и воскресенье (0).
+//   • сегодня ср или вс → сегодня;
+//   • сегодня любой другой день → ближайший прошедший из {ср, вс}.
+function lastServiceDay(from: Date): Date {
   const d = new Date(from)
-  let diff = (targetDow - d.getDay() + 7) % 7
-  if (diff === 0) diff = 7
-  d.setDate(d.getDate() + diff)
-  return d
+  d.setHours(0, 0, 0, 0)
+  const dow = d.getDay()
+  if (dow === 3 || dow === 0) return d
+  // сколько дней назад до ближайшей среды (3) или воскресенья (0)
+  // перебираем от 1 до 6 назад
+  for (let i = 1; i <= 6; i++) {
+    const x = new Date(d)
+    x.setDate(x.getDate() - i)
+    const dw = x.getDay()
+    if (dw === 3 || dw === 0) return x
+  }
+  return d // недостижимо, но на всякий случай
 }
 
+// ВАЖНО: разделитель '~', не '#' — '#' в URL это fragment,
+// он обрезается браузером и не доходит до сервера.
 function buildServiceId(date: string, slot: number): string {
-  return slot <= 1 ? date : `${date}#${slot}`
+  return slot <= 1 ? date : `${date}~${slot}`
 }
 
 const NAME_KEY = 'mc_name'
@@ -31,22 +45,19 @@ function echoKey(serviceId: string, templateId: string) {
 export const useChecklistStore = defineStore('checklist', {
   state: () => {
     const today = new Date()
-    const nextWed = nextWeekday(today, 3)
-    const nextSun = nextWeekday(today, 0)
-    const isWed = nextWed < nextSun
-    const date = toISODate(isWed ? nextWed : nextSun)
+    const date = toISODate(lastServiceDay(today))
 
     return {
       templates: { tech: [] as TemplateItem[] },
       editMode: { tech: false },
       serviceId: date,
       date,
-      slot: 1,                         // текущий выбранный slot
-      dayServices: [] as RecentService[], // собрания на выбранную дату
+      slot: 1,
+      dayServices: [] as RecentService[],
       outfit: '',
       checks: {} as Record<string, CheckEntry>,
       recent: [] as RecentService[],
-      localName: (import.meta.client && localStorage.getItem(NAME_KEY)) || '',
+      localName: '',
       loaded: false,
       wsConnected: false,
       wsPeers: 0,
@@ -64,12 +75,24 @@ export const useChecklistStore = defineStore('checklist', {
     techDone(s) {
       return s.templates.tech.reduce((n, t) => n + (s.checks[t.id]?.done ? 1 : 0), 0)
     },
+    hasService(s): boolean {
+      return s.slot > 0 && s.dayServices.some(x => x.slot === s.slot)
+    },
     currentDayKey(s): DayKey {
       return dayKeyForDate(s.date)
     },
   },
   actions: {
     async bootstrap() {
+      // Читаем локальное имя на клиенте: в state() этого делать нельзя,
+      // потому что при SSR там пусто и значение не восстановится.
+      if (import.meta.client) {
+        try {
+          const stored = localStorage.getItem(NAME_KEY)
+          if (stored) this.localName = stored
+        } catch { /* приватный режим */ }
+      }
+
       const [tpl, recent] = await Promise.all([
         $fetch<{ tech: TemplateItem[] }>('/api/templates'),
         $fetch<RecentService[]>('/api/services'),
@@ -87,7 +110,7 @@ export const useChecklistStore = defineStore('checklist', {
       this.wsConnected = socket.isConnected.value
       this.wsPeers = socket.peersCount.value
       socket.onMessage((msg) => this.applyServerMessage(msg))
-      socket.subscribe(this.serviceId)
+      this.subscribeChannels()
 
       const stop1 = watch(
         () => socket.isConnected.value,
@@ -100,6 +123,14 @@ export const useChecklistStore = defineStore('checklist', {
         { immediate: true },
       )
       this._wsUnwatch = () => { stop1(); stop2() }
+    },
+
+    // Подписка на текущий serviceId и на канал даты
+    // (последний нужен, чтобы видеть удаления/создания соседних слотов).
+    subscribeChannels() {
+      if (!this.socket) return
+      this.socket.subscribe(this.serviceId)
+      this.socket.subscribe(`date:${this.date}`)
     },
 
     applyServerMessage(msg: WsServerMessage) {
@@ -120,31 +151,53 @@ export const useChecklistStore = defineStore('checklist', {
         this.wsPeers = msg.count
         return
       }
+      if (msg.type === 'service-deleted') {
+        if (msg.date !== this.date) return
+        this.reloadDayServices().then(() => {
+          if (msg.serviceId === this.serviceId) {
+            if (this.dayServices.length) {
+              this.selectSlot(this.dayServices[0].slot)
+            } else {
+              // Пустое состояние — не создаём сервис.
+              this.serviceId = this.date
+              this.slot = 0
+              this.outfit = ''
+              this.checks = {}
+              this.subscribeChannels()
+            }
+          }
+        })
+        return
+      }
+      if (msg.type === 'date-services-changed') {
+        if (msg.date !== this.date) return
+        this.reloadDayServices()
+        return
+      }
     },
 
-    // Загружает список собраний на дату и подгружает первое (или указанный slot).
+    // Загрузка списка собраний на дату.
+    // ВАЖНО: не создаём сервис автоматически. Если на дату ничего нет —
+    // показываем пустое состояние, а пользователь может добавить
+    // собрание кнопкой «+ ещё».
     async loadDate(date: string, preferSlot?: number) {
       this.date = date
 
-      const services = await $fetch<RecentService[]>('/api/services', {
+      const list = await $fetch<RecentService[]>('/api/services', {
         query: { date },
       }).catch(() => [] as RecentService[])
 
-      // Если на дату ещё нет ни одного собрания — создаём первое,
-      // чтобы пользователь сразу мог начать отмечать.
-      let list = services
-      if (!list.length) {
-        const created = await $fetch<RecentService>('/api/services', {
-          method: 'POST',
-          body: { date },
-        })
-        list = [created]
-        // обновим и историю в шапке
-        await this.touchRecent()
-      } else {
-        this.dayServices = list
-      }
       this.dayServices = list
+
+      if (!list.length) {
+        // Пустое состояние: нет ни одного собрания.
+        this.serviceId = date
+        this.slot = 0
+        this.outfit = ''
+        this.checks = {}
+        this.subscribeChannels()
+        return
+      }
 
       const slot = preferSlot && list.some(s => s.slot === preferSlot)
         ? preferSlot
@@ -153,13 +206,20 @@ export const useChecklistStore = defineStore('checklist', {
       await this.selectSlot(slot)
     },
 
+    async reloadDayServices() {
+      this.dayServices = await $fetch<RecentService[]>('/api/services', {
+        query: { date: this.date },
+      })
+    },
+
+
     async selectSlot(slot: number) {
       this.slot = slot
       const service = this.dayServices.find(s => s.slot === slot)
       const serviceId = service ? service.id : buildServiceId(this.date, slot)
       this.serviceId = serviceId
 
-      const data = await $fetch<ServiceRecord | null>(`/api/services/${serviceId}`)
+      const data = await $fetch<ServiceRecord | null>(`/api/services/${encodeURIComponent(serviceId)}`)
         .catch(() => null)
 
       if (data) {
@@ -169,7 +229,7 @@ export const useChecklistStore = defineStore('checklist', {
         this.outfit = ''
         this.checks = {}
       }
-      if (this.socket) this.socket.subscribe(this.serviceId)
+      this.subscribeChannels()
     },
 
     async addService() {
@@ -177,16 +237,37 @@ export const useChecklistStore = defineStore('checklist', {
         method: 'POST',
         body: { date: this.date },
       })
-      // перезагрузим список собраний на дату
-      this.dayServices = await $fetch<RecentService[]>('/api/services', {
-        query: { date: this.date },
-      })
+      await this.reloadDayServices()
       await this.touchRecent()
       await this.selectSlot(created.slot)
     },
 
+    // Удаление собрания.
+    // Если после удаления на дату ничего не осталось — просто пустое
+    // состояние, новое собрание не создаём.
+    async deleteService(serviceId: string) {
+      const isCurrent = serviceId === this.serviceId
+
+      await $fetch(`/api/services/${encodeURIComponent(serviceId)}`, { method: 'DELETE' })
+
+      await this.reloadDayServices()
+
+      if (isCurrent) {
+        if (this.dayServices.length) {
+          await this.selectSlot(this.dayServices[0].slot)
+        } else {
+          this.serviceId = this.date
+          this.slot = 0
+          this.outfit = ''
+          this.checks = {}
+          this.subscribeChannels()
+        }
+      }
+      await this.touchRecent()
+    },
+
     async saveServiceMeta() {
-      await $fetch(`/api/services/${this.serviceId}`, {
+      await $fetch(`/api/services/${encodeURIComponent(this.serviceId)}`, {
         method: 'PUT',
         body: { date: this.date, outfit: this.outfit },
       })
@@ -202,7 +283,7 @@ export const useChecklistStore = defineStore('checklist', {
       localEcho.set(key, '*')
       setTimeout(() => { if (localEcho.get(key) === '*') localEcho.delete(key) }, 4000)
 
-      await $fetch(`/api/services/${this.serviceId}/check`, {
+      await $fetch(`/api/services/${encodeURIComponent(this.serviceId)}/check`, {
         method: 'PUT',
         body: {
           templateId, done,

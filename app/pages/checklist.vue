@@ -5,10 +5,10 @@ import { useChecklistStore } from '~/stores/checklist'
 import type { ModuleKey } from '~~/shared/types'
 
 const store = useChecklistStore()
-const {
-  templates, editMode, serviceId, date, slot, dayServices,
+const {templates, editMode, serviceId, date, slot, dayServices,
   outfit, checks, recent,
   techDone, techTotal, currentDayKey, wsConnected, localName,
+  hasService,
 } = storeToRefs(store)
 
 onMounted(() => {
@@ -29,9 +29,12 @@ async function selectSlot(s: number) {
 async function addService() {
   await store.addService()
 }
+async function deleteService(id: string) {
+  await store.deleteService(id)
+}
 async function openService(id: string) {
   // id = "YYYY-MM-DD" или "YYYY-MM-DD#N"
-  const m = /^(\d{4}-\d{2}-\d{2})(?:#(\d+))?$/.exec(id)
+  const m = /^(\d{4}-\d{2}-\d{2})(?:[~#](\d+))?$/.exec(id)
   if (!m) return
   const d = m[1]
   const s = m[2] ? parseInt(m[2], 10) : 1
@@ -68,7 +71,7 @@ async function addItem(key: ModuleKey, grp: string, label: string) {
   <div class="wrap">
     <div>
       <BrandBar />
-      <h1>Пульт медиаслужения</h1>
+      <h1>Чеклист</h1>
       <p class="subtitle">
         Чек-лист технической готовности перед собранием. Отметки сохраняются
         в общей базе данных и синхронизируются между устройствами медиа-команды
@@ -94,10 +97,12 @@ async function addItem(key: ModuleKey, grp: string, label: string) {
       @add-service="addService"
       @open-service="openService"
       @change-name="changeName"
+      @delete-service="deleteService"
     />
 
     <div class="modules">
-      <ChecklistModule
+      <template v-if="hasService">
+        <ChecklistModule
         module-key="tech"
         title="Техническая готовность"
         :items="templates.tech"
@@ -110,6 +115,11 @@ async function addItem(key: ModuleKey, grp: string, label: string) {
         @remove-item="(id) => removeItem('tech', id)"
         @add-item="(g, l) => addItem('tech', g, l)"
       />
+      </template>
+      <div v-else class="empty-service">
+        <p>На эту дату пока нет собраний.</p>
+        <button type="button" class="submit-btn" @click="addService">+ добавить собрание</button>
+      </div>
     </div>
 
     <footer>отметки синхронизируются между всеми устройствами медиа-команды через общую базу</footer>

@@ -1,5 +1,5 @@
 import { query } from '~~/server/utils/db'
-import { toISODate, buildServiceId } from '~~/server/utils/services'
+import { toISODate, SLOT_SEPARATOR } from '~~/server/utils/services'
 
 interface Body { date: string }
 
@@ -10,13 +10,14 @@ export default defineEventHandler(async (event) => {
   }
   const date = body.date
 
-  // следующий свободный slot на эту дату
+  // MAX(slot) по этой дате — ищем независимо от разделителя в id.
+  // Потому что в id может быть старый '#' или новый '~', или id == date.
   const maxRow = await query<{ max: number | null }>(
     `SELECT MAX(slot) AS max FROM services WHERE date = $1`,
     [date]
   )
   const nextSlot = (maxRow[0]?.max ?? 0) + 1
-  const id = buildServiceId(date, nextSlot)
+  const id = nextSlot <= 1 ? date : `${date}${SLOT_SEPARATOR}${nextSlot}`
 
   const rows = await query<{ id: string; date: Date | string; slot: number; outfit: string }>(
     `INSERT INTO services (id, date, slot, outfit)

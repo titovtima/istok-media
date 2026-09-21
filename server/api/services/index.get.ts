@@ -1,11 +1,7 @@
 import { query } from '~~/server/utils/db'
 import { toISODate } from '~~/server/utils/services'
 
-interface Row {
-  id: string
-  date: Date | string
-  slot: number
-}
+interface Row { id: string; date: Date | string; slot: number }
 
 export default defineEventHandler(async (event) => {
   const q = getQuery(event)

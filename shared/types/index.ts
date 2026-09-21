@@ -110,6 +110,19 @@ export interface WsError {
   message: string
 }
 
+
+export interface WsServiceDeleted {
+  type: 'service-deleted'
+  serviceId: string
+  date: string
+  slot: number
+}
+
+export interface WsDateServicesChanged {
+  type: 'date-services-changed'
+  date: string
+}
+
 export type WsServerMessage =
   | WsHello
   | WsCheckUpdate

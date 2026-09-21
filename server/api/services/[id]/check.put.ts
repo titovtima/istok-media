@@ -1,6 +1,6 @@
 import { query } from '~~/server/utils/db'
 import { broadcastToService } from '~~/server/utils/ws-hub'
-import { parseServiceId } from '~~/server/utils/services'
+import { parseServiceId, resolveServiceId } from '~~/server/utils/services'
 
 interface Body {
   templateId: string
@@ -10,16 +10,19 @@ interface Body {
 }
 
 export default defineEventHandler(async (event) => {
-  const serviceId = getRouterParam(event, 'id')
-  if (!serviceId) throw createError({ statusCode: 400, statusMessage: 'serviceId required' })
+  const rawId = getRouterParam(event, 'id')
+  if (!rawId) throw createError({ statusCode: 400, statusMessage: 'serviceId required' })
 
-  const parsed = parseServiceId(serviceId)
+  const parsed = parseServiceId(rawId)
   if (!parsed) throw createError({ statusCode: 400, statusMessage: 'invalid id format' })
 
   const body = await readBody<Body>(event)
   if (!body?.templateId) throw createError({ statusCode: 400, statusMessage: 'templateId required' })
 
-  // гарантируем строку services (id → date+slot выводим из самого id)
+  // Приводим id к тому, что реально в БД (иначе при миграции получим дубли).
+  const existing = await resolveServiceId(rawId)
+  const serviceId = existing ? existing.id : rawId
+
   await query(
     `INSERT INTO services (id, date, slot) VALUES ($1, $2, $3)
      ON CONFLICT (id) DO NOTHING`,

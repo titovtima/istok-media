@@ -159,16 +159,17 @@ export default defineEventHandler(async (event): Promise<BookingWithAttendance[]
     })
   }
 
-  const clientId = typeof q.clientId === 'string' ? q.clientId : null
   const viewerName = typeof q.viewerName === 'string' ? q.viewerName.trim() : ''
 
   const summary = (key: string): AttendanceSummary => {
     const list = attByEvent.get(key) ?? []
     let mine: AttendanceStatus | null = null
     if (viewerName) {
-      // «моя» отметка — запись с моим именем; clientId вторичен,
-      // но если он у нас есть — учитываем совпадение тоже.
-      const rec = list.find(x => x.name === viewerName && (!clientId || x.clientId === clientId))
+      // «моя» отметка = запись с тем же именем. clientId НЕ учитываем:
+      // у каждого устройства он свой, а имя — общий идентификатор
+      // человека в этой модели. Иначе на новом устройстве под тем же
+      // именем кнопки не подсветятся.
+      const rec = list.find(x => x.name === viewerName)
       if (rec) mine = rec.status
     }
     return {

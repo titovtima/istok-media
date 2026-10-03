@@ -3,6 +3,7 @@ import {
   isoDate, expandSeriesDates, bookingEventKey, seriesEventKey,
   type SeriesRow,
 } from '~~/server/utils/events'
+import { resolveActors, isAnonActor } from '~~/server/utils/actor'
 import type {
   AttendanceRecord, AttendanceStatus, AttendanceSummary,
   BookingRecord, BookingResource, BookingWithAttendance,
@@ -26,13 +27,10 @@ interface BookingRow {
 
 interface AttRow {
   event_key: string
-  name: string
-  client_id: string | null
+  actor: string
   status: AttendanceStatus
 }
 
-// Безопасно собирает плейсхолдеры $1, $2, ... для IN (...).
-// Возвращает { placeholders, values } или null, если массив пуст.
 function inClause(values: string[], startIndex = 1): { placeholders: string; values: string[] } | null {
   if (!values.length) return null
   const placeholders = values.map((_, i) => `$${startIndex + i}`).join(', ')
@@ -44,7 +42,6 @@ export default defineEventHandler(async (event): Promise<BookingWithAttendance[]
   const from = typeof q.from === 'string' ? q.from : isoDate(new Date())
   const to = typeof q.to === 'string' ? q.to : isoDate(addDays(new Date(), 6))
 
-  // 1. Разовые брони за период.
   const bookingRows = await query<BookingRow>(
     `SELECT id, date, start_time, end_time, resource, title,
             organizer_type, organizer_name, organizer_id, note, created_by, cancelled_at
@@ -54,7 +51,6 @@ export default defineEventHandler(async (event): Promise<BookingWithAttendance[]
     [from, to]
   )
 
-  // 2. Серии, действующие в диапазоне.
   const seriesRows = await query<SeriesRow>(
     `SELECT id, weekday, start_time, end_time, resource, title,
             organizer_type, organizer_name, organizer_id, note,
@@ -66,15 +62,14 @@ export default defineEventHandler(async (event): Promise<BookingWithAttendance[]
     [to]
   )
 
-  // Исключения для серий — через IN (...), не через ANY($1::text[]).
   const seriesIds = seriesRows.map(s => s.id)
   let exceptionsRows: { series_id: string; date: string | Date }[] = []
-  const clause = inClause(seriesIds)
-  if (clause) {
+  const excClause = inClause(seriesIds)
+  if (excClause) {
     exceptionsRows = await query<{ series_id: string; date: string | Date }>(
       `SELECT series_id, date FROM booking_exceptions
-        WHERE series_id IN (${clause.placeholders})`,
-      clause.values
+        WHERE series_id IN (${excClause.placeholders})`,
+      excClause.values
     )
   }
   const cancelledBySeries = new Map<string, Set<string>>()
@@ -84,14 +79,12 @@ export default defineEventHandler(async (event): Promise<BookingWithAttendance[]
     cancelledBySeries.get(r.series_id)!.add(iso)
   }
 
-  // Слоты разовых броней — чтобы виртуальные из серии их не дублировали.
   const realSlot = new Set(
     bookingRows
       .filter(b => !b.cancelled_at)
       .map(b => `${isoDate(b.date)}|${b.resource}|${normalizeTime(b.start_time)}`)
   )
 
-  // 3. Разворачиваем серии.
   const expanded: BookingRecord[] = []
   for (const s of seriesRows) {
     const cancelled = cancelledBySeries.get(s.id) ?? new Set<string>()
@@ -117,7 +110,6 @@ export default defineEventHandler(async (event): Promise<BookingWithAttendance[]
     }
   }
 
-  // 4. Собираем все брони.
   const records: BookingRecord[] = [
     ...bookingRows.map<BookingRecord>(b => ({
       id: bookingEventKey(b.id),
@@ -137,39 +129,39 @@ export default defineEventHandler(async (event): Promise<BookingWithAttendance[]
     ...expanded,
   ]
 
-  // 5. Присутствие по всем event_key — тоже через IN (...).
   const eventKeys = records.map(r => r.id)
   let attRows: AttRow[] = []
   const attClause = inClause(eventKeys)
   if (attClause) {
     attRows = await query<AttRow>(
-      `SELECT event_key, name, client_id, status
+      `SELECT event_key, actor, status
          FROM attendance
         WHERE event_key IN (${attClause.placeholders})`,
       attClause.values
     )
   }
+
+  // Резолвим display name для всех actor разом.
+  const actors = Array.from(new Set(attRows.map(r => r.actor)))
+  const actorNames = await resolveActors(actors)
+
   const attByEvent = new Map<string, AttendanceRecord[]>()
   for (const r of attRows) {
     if (!attByEvent.has(r.event_key)) attByEvent.set(r.event_key, [])
     attByEvent.get(r.event_key)!.push({
-      name: r.name,
-      clientId: r.client_id,
+      actor: r.actor,
+      displayName: actorNames.get(r.actor) ?? (isAnonActor(r.actor) ? r.actor.slice(5) : r.actor),
       status: r.status,
     })
   }
 
-  const viewerName = typeof q.viewerName === 'string' ? q.viewerName.trim() : ''
+  const viewerActor = typeof q.viewerActor === 'string' ? q.viewerActor.trim() : ''
 
   const summary = (key: string): AttendanceSummary => {
     const list = attByEvent.get(key) ?? []
     let mine: AttendanceStatus | null = null
-    if (viewerName) {
-      // «моя» отметка = запись с тем же именем. clientId НЕ учитываем:
-      // у каждого устройства он свой, а имя — общий идентификатор
-      // человека в этой модели. Иначе на новом устройстве под тем же
-      // именем кнопки не подсветятся.
-      const rec = list.find(x => x.name === viewerName)
+    if (viewerActor) {
+      const rec = list.find(x => x.actor === viewerActor)
       if (rec) mine = rec.status
     }
     return {
@@ -185,10 +177,7 @@ export default defineEventHandler(async (event): Promise<BookingWithAttendance[]
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.start.localeCompare(b.start)))
 })
 
-function normalizeTime(t: string): string {
-  return t.slice(0, 5)
-}
-
+function normalizeTime(t: string): string { return t.slice(0, 5) }
 function addDays(d: Date, n: number): Date {
   const x = new Date(d); x.setDate(x.getDate() + n); return x
 }

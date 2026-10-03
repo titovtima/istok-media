@@ -4,6 +4,7 @@ import type {
   AttendanceStatus, BookingResource, BookingWithAttendance,
   OrganizerType, WsServerMessage,
 } from '~~/shared/types'
+import { useActor } from '~/composables/useActor'
 
 const NAME_KEY = 'mc_name'
 const CHURCH_NAME = 'Источник Жизни'
@@ -30,10 +31,9 @@ const MINISTRIES = [
 const WEEKDAYS_RU = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота']
 
 const clientId = ref('')
-const viewerName = ref('')
+const { actor, displayName: viewerName } = useActor()
 onMounted(() => {
   clientId.value = useClientId()
-  try { viewerName.value = localStorage.getItem(NAME_KEY) || '' } catch {}
 })
 
 // ---------------- Неделя с понедельника ----------------
@@ -259,7 +259,7 @@ async function loadRange() {
     query: {
       from: rangeStart.value,
       to: rangeEnd.value,
-      clientId: clientId.value,
+      viewerActor: actor.value,
       viewerName: viewerName.value,
     },
   })
@@ -303,33 +303,20 @@ function handleWs(msg: WsServerMessage) {
   }
 }
 
-function applyAttendance(msg: { eventKey: string; name: string; clientId: string | null; status: AttendanceStatus | null }) {
+function applyAttendance(msg: { eventKey: string; actor: string; displayName: string; status: AttendanceStatus | null }) {
   const d = days.value.find(x => x.id === msg.eventKey)
   if (!d) return
-
-  // 1. Обновляем группы: убираем запись с этим именем и, если статус есть,
-  //    добавляем в нужную группу.
-  const stripName = (list: any[]) => list.filter(r => r.name !== msg.name)
-  d.attendance.yes = stripName(d.attendance.yes)
-  d.attendance.no = stripName(d.attendance.no)
-  d.attendance.maybe = stripName(d.attendance.maybe)
+  const strip = (list: any[]) => list.filter(r => r.actor !== msg.actor)
+  d.attendance.yes = strip(d.attendance.yes)
+  d.attendance.no = strip(d.attendance.no)
+  d.attendance.maybe = strip(d.attendance.maybe)
   if (msg.status) {
-    const rec = { name: msg.name, clientId: msg.clientId, status: msg.status }
+    const rec = { actor: msg.actor, displayName: msg.displayName, status: msg.status }
     if (msg.status === 'yes') d.attendance.yes.push(rec)
     else if (msg.status === 'no') d.attendance.no.push(rec)
     else d.attendance.maybe.push(rec)
   }
-
-  // 2. «Моя» отметка — только по имени, без clientId:
-  //    имя — единственный идентификатор человека в этой модели, а
-  //    clientId у каждого устройства свой.
-  const me = viewerName.value.trim()
-  if (me && msg.name === me) {
-    d.attendance.mine = msg.status
-  } else if (!me && msg.clientId && msg.clientId === clientId.value) {
-    // fallback: если имя не введено, но clientId совпал — тоже считаем «моей»
-    // (на случай, если пользователь не подставил имя, но кликнул с этого же
-    //  устройства; подсветим кнопку, чтобы он видел результат клика).
+  if (msg.actor === actor.value) {
     d.attendance.mine = msg.status
   }
 }
@@ -437,22 +424,19 @@ async function setAttendance(b: BookingWithAttendance, status: AttendanceStatus)
     return
   }
   const next = b.attendance.mine === status ? null : status
+  const myActor = actor.value
 
-  // Оптимистично обновляем и mine, и группы, чтобы до прихода
-  // WS-сообщения UI уже выглядел правильно.
   const prevMine = b.attendance.mine
   const prevYes = b.attendance.yes.slice()
   const prevNo = b.attendance.no.slice()
   const prevMaybe = b.attendance.maybe.slice()
 
-  // Своё имя убираем из всех групп
-  b.attendance.yes = b.attendance.yes.filter(r => r.name !== name)
-  b.attendance.no = b.attendance.no.filter(r => r.name !== name)
-  b.attendance.maybe = b.attendance.maybe.filter(r => r.name !== name)
-
-  // Если ставим статус — добавляем себя в группу.
+  const strip = (list: any[]) => list.filter(r => r.actor !== myActor)
+  b.attendance.yes = strip(b.attendance.yes)
+  b.attendance.no = strip(b.attendance.no)
+  b.attendance.maybe = strip(b.attendance.maybe)
   if (next) {
-    const rec = { name, clientId: clientId.value, status: next }
+    const rec = { actor: myActor, displayName: name, status: next }
     if (next === 'yes') b.attendance.yes.push(rec)
     else if (next === 'no') b.attendance.no.push(rec)
     else b.attendance.maybe.push(rec)
@@ -462,10 +446,14 @@ async function setAttendance(b: BookingWithAttendance, status: AttendanceStatus)
   try {
     await $fetch('/api/attendance', {
       method: 'PUT',
-      body: { eventKey: b.id, name, clientId: clientId.value, status: next },
+      body: {
+        eventKey: b.id,
+        actor: myActor,
+        displayName: name,
+        status: next,
+      },
     })
   } catch {
-    // откат всех изменений
     b.attendance.mine = prevMine
     b.attendance.yes = prevYes
     b.attendance.no = prevNo
@@ -788,15 +776,15 @@ const WEEKDAY_OPTIONS = [
             <div v-if="openAttendance.has(b.id)" class="att-detail">
               <div v-if="b.attendance.yes.length" class="att-group">
                 <span class="att-group-title att-yes-title">будут</span>
-                <span class="att-names">{{ b.attendance.yes.map(r => r.name).join(', ') }}</span>
+                <span class="att-names">{{ b.attendance.yes.map(r => r.displayName).join(', ') }}</span>
               </div>
               <div v-if="b.attendance.maybe.length" class="att-group">
                 <span class="att-group-title att-maybe-title">под вопросом</span>
-                <span class="att-names">{{ b.attendance.maybe.map(r => r.name).join(', ') }}</span>
+                <span class="att-names">{{ b.attendance.maybe.map(r => r.displayName).join(', ') }}</span>
               </div>
               <div v-if="b.attendance.no.length" class="att-group">
                 <span class="att-group-title att-no-title">не будут</span>
-                <span class="att-names">{{ b.attendance.no.map(r => r.name).join(', ') }}</span>
+                <span class="att-names">{{ b.attendance.no.map(r => r.displayName).join(', ') }}</span>
               </div>
               <div v-if="!b.attendance.yes.length && !b.attendance.maybe.length && !b.attendance.no.length" class="day-empty">
                 пока никто не отметился

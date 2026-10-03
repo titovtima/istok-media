@@ -17,7 +17,8 @@ export interface TemplateItem {
 
 export interface CheckEntry {
   done: boolean
-  by: string | null
+  byActor: string | null     // actor того, кто поставил последним
+  by: string | null          // displayName, вычислен сервером
   at: string | null
 }
 
@@ -42,15 +43,16 @@ export type FeedbackService = 'vosslavlenie' | 'poryadok' | 'uborka' | 'media' |
 
 export interface FeedbackEntry {
   id: string
-  name: string
+  authorLogin: string        // actor
+  authorName: string         // displayName, вычислено сервером
   service: FeedbackService
   otherNote: string
   description: string
   resolved: boolean
   resolvedBy: string | null
   resolvedAt: string | null
-  createdAt: string      // ISO
-  createdLabel: string   // "17.09 14:32"
+  createdAt: string
+  createdLabel: string
 }
 
 // ---------------------------------------------------------------------------
@@ -75,6 +77,7 @@ export interface WsCheckUpdate {
   templateId: string
   done: boolean
   by: string | null
+  byActor: string | null
   at: string | null
   updatedAt: string
 }
@@ -161,9 +164,9 @@ export interface BookingRecord {
 }
 
 export interface AttendanceRecord {
-  name: string
+  actor: string             // user.login или 'anon:<имя>'
+  displayName: string       // вычислено сервером: full_name или имя без префикса
   status: AttendanceStatus
-  clientId: string | null      // кто нажал последним (для подсветки «моя»)
 }
 
 export interface AttendanceSummary {
@@ -189,9 +192,9 @@ export interface WsBookingChanged {
 export interface WsAttendanceChanged {
   type: 'attendance-changed'
   eventKey: string
-  name: string
-  clientId: string | null
-  status: AttendanceStatus | null  // null = отметка снята
+  actor: string
+  displayName: string        // вычислено сервером
+  status: AttendanceStatus | null
 }
 
 export type WsServerMessage =
@@ -204,3 +207,13 @@ export type WsServerMessage =
   | WsBookingChanged
   | WsAttendanceChanged
   | WsError
+
+// ---------------------------------------------------------------------------
+// Пользователи
+// ---------------------------------------------------------------------------
+export interface AuthUser {
+  id: string
+  email: string
+  login: string
+  fullName: string
+}

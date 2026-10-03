@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS checks (
   service_id   TEXT NOT NULL REFERENCES services(id) ON DELETE CASCADE,
   template_id  TEXT NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
   done         BOOLEAN NOT NULL DEFAULT false,
-  by_name      TEXT,
+  by_actor     TEXT,
   at_label     TEXT,
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (service_id, template_id)
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS checks (
 
 CREATE TABLE IF NOT EXISTS feedback (
   id             TEXT PRIMARY KEY,
-  name           TEXT NOT NULL,
+  author_login   TEXT NOT NULL,
   service        TEXT NOT NULL CHECK (service IN ('vosslavlenie','poryadok','uborka','media','other')),
   other_note     TEXT NOT NULL DEFAULT '',
   description    TEXT NOT NULL,
@@ -104,15 +104,34 @@ CREATE TABLE IF NOT EXISTS booking_exceptions (
 
 CREATE TABLE IF NOT EXISTS attendance (
   event_key  TEXT NOT NULL,
-  name       TEXT NOT NULL,
-  client_id  TEXT NOT NULL DEFAULT '',
+  actor      TEXT NOT NULL,
   status     TEXT NOT NULL CHECK (status IN ('yes','no','maybe')),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  PRIMARY KEY (event_key, name)
+  PRIMARY KEY (event_key, actor)
 );
 CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_key);
 
+
+CREATE TABLE IF NOT EXISTS users (
+  id             TEXT PRIMARY KEY,
+  email          TEXT NOT NULL UNIQUE,
+  login          TEXT NOT NULL UNIQUE,
+  full_name      TEXT NOT NULL,
+  password_hash  TEXT NOT NULL,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token      TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
 -- ---------- Сиды (идемпотентно) ----------
+
 
 INSERT INTO templates (id, module, grp, label, position) VALUES
   ('t1','tech','Звук','Resolume Arena запущен и стабильно работает',1),

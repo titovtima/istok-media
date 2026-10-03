@@ -88,9 +88,20 @@ export const useChecklistStore = defineStore('checklist', {
       // потому что при SSR там пусто и значение не восстановится.
       if (import.meta.client) {
         try {
-          const stored = localStorage.getItem(NAME_KEY)
-          if (stored) this.localName = stored
-        } catch { /* приватный режим */ }
+          // 1) если пользователь авторизован — имя из аккаунта имеет приоритет
+          const { useAuthStore } = await import('~/stores/auth')
+          const auth = useAuthStore()
+          if (!auth.loaded) {
+            try { await auth.fetchMe() } catch { /* ignore */ }
+          }
+          if (auth.isLoggedIn && auth.user?.fullName) {
+            this.localName = auth.user.fullName
+          } else {
+            // 2) иначе — из localStorage
+            const stored = localStorage.getItem(NAME_KEY)
+            this.localName = stored || ''
+          }
+        } catch { /* приватный режим или что-то ещё */ }
       }
 
       const [tpl, recent] = await Promise.all([
@@ -138,7 +149,7 @@ export const useChecklistStore = defineStore('checklist', {
         if (msg.serviceId !== this.serviceId) return
         const key = echoKey(msg.serviceId, msg.templateId)
         if (localEcho.get(key) === '*') { localEcho.delete(key); return }
-        this.checks[msg.templateId] = { done: msg.done, by: msg.by, at: msg.at }
+        this.checks[msg.templateId] = { done: msg.done, by: msg.by, byActor: msg.byActor ?? null, at: msg.at }
         return
       }
       if (msg.type === 'service-meta-update') {
@@ -275,9 +286,24 @@ export const useChecklistStore = defineStore('checklist', {
     },
 
     async toggle(templateId: string, done: boolean) {
-      const by = this.ensureNameInteractive()
       const at = nowHM()
-      this.checks[templateId] = { done, by: by || null, at: done ? at : null }
+
+      // actor/displayName — из useActor.
+      let actor = ''
+      let displayName = this.localName
+      try {
+        const mod = await import('~/composables/useActor')
+        const a = mod.useActor()
+        actor = a.actor.value
+        displayName = a.displayName.value || this.localName
+      } catch { /* fallback */ }
+
+      this.checks[templateId] = {
+        done,
+        byActor: actor || null,
+        by: displayName || null,
+        at: done ? at : null,
+      }
 
       const key = echoKey(this.serviceId, templateId)
       localEcho.set(key, '*')
@@ -287,7 +313,8 @@ export const useChecklistStore = defineStore('checklist', {
         method: 'PUT',
         body: {
           templateId, done,
-          by: by || null,
+          actor,
+          displayName,
           at: done ? at : null,
         },
       })

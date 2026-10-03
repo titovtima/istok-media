@@ -5,6 +5,7 @@
   "scripts": {
     "build": "nuxt build",
     "db:check-services": "node scripts/db-check-services.mjs",
+    "db:hard-fix-attendance": "node scripts/db-hard-fix-attendance.mjs",
     "db:init": "node scripts/db-init.mjs",
     "dev": "nuxt dev",
     "postinstall": "nuxt prepare",
@@ -12,6 +13,7 @@
   },
   "dependencies": {
     "@pinia/nuxt": "^0.5.4",
+    "bcryptjs": "^2.4.3",
     "crossws": "^0.3.1",
     "nuxt": "^4.5.2",
     "pg": "^8.12.0",
@@ -20,6 +22,7 @@
     "vue-router": "^4.4.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.11.6",
     "typescript": "^5.5.0"

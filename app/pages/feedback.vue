@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useActor } from '~/composables/useActor'
 import type { FeedbackEntry, FeedbackService, WsServerMessage } from '~~/shared/types'
 
 const NAME_KEY = 'mc_name'
@@ -40,9 +41,12 @@ const formMsg = ref('')
 const formMsgKind = ref<'' | 'ok' | 'error'>('')
 
 const localName = ref('')
+const { actor, displayName: accountViewerName } = useActor()
 onMounted(() => {
   try { localName.value = localStorage.getItem(NAME_KEY) || '' } catch {}
-  if (localName.value) form.name = localName.value
+  if (accountViewerName.value) form.name = accountViewerName.value
+  else if (accountViewerName.value) form.name = accountViewerName.value
+  else if (localName.value) form.name = localName.value
 })
 
 // ---------- WS ----------
@@ -79,6 +83,8 @@ onMounted(async () => {
 
 // ---------- сохранение имени ----------
 function persistName() {
+  accountViewerName.value = form.name.trim()
+  accountViewerName.value = form.name.trim()
   const n = form.name.trim()
   if (!n) return
   if (n !== localName.value) {
@@ -106,8 +112,10 @@ async function submit() {
       body: {
         name: form.name.trim(),
         service: form.service,
+        actor: actor.value,
         otherNote: form.service === 'other' ? form.otherNote.trim() : '',
         description: form.description.trim(),
+        actor: actor.value,
       },
     })
     // Дедупликация: WS-эхо может прийти раньше ответа PUT, поэтому
@@ -284,7 +292,7 @@ function tagText(e: FeedbackEntry): string {
           <div class="log-body">
             <div class="log-top">
               <span class="log-tag">{{ tagText(entry) }}</span>
-              <span class="log-name">{{ entry.name }}</span>
+              <span class="log-name">{{ entry.authorName }}</span>
               <span class="log-time">{{ entry.createdLabel }}</span>
             </div>
             <div class="log-desc">{{ entry.description }}</div>

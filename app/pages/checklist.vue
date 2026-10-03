@@ -5,6 +5,7 @@ import { useChecklistStore } from '~/stores/checklist'
 import type { ModuleKey } from '~~/shared/types'
 
 const store = useChecklistStore()
+const { actor, displayName: accountViewerName } = useActor()
 const {templates, editMode, serviceId, date, slot, dayServices,
   outfit, checks, recent,
   techDone, techTotal, currentDayKey, wsConnected, localName,
@@ -12,6 +13,7 @@ const {templates, editMode, serviceId, date, slot, dayServices,
 } = storeToRefs(store)
 
 onMounted(() => {
+  store.localName = accountViewerName.value
   store.bootstrap()
 })
 
@@ -46,7 +48,8 @@ async function openService(id: string) {
   }
 }
 function changeName(v: string) {
-  store.setName(v)
+  accountViewerName.value = v
+  store.localName = accountViewerName.value
 }
 function toggleEdit(key: ModuleKey) {
   store.editMode[key] = !store.editMode[key]

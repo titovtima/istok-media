@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import type { DayKey, RecentService } from '~~/shared/types'
 import { formatDateLabel, dayLabel, dayKeyForDate } from '~/composables/useFormat'
+import { useActor } from '~/composables/useActor'
 
 const props = defineProps<{
   date: string
@@ -16,6 +17,8 @@ const props = defineProps<{
   wsConnected: boolean
   userName: string
 }>()
+
+const { displayName: viewerName } = useActor()
 
 const emit = defineEmits<{
   (e: 'change-date', v: string): void
@@ -49,11 +52,20 @@ function isActive(day: DayKey): boolean {
   return props.currentDay === day
 }
 
-const nameDraft = ref(props.userName)
-watch(() => props.userName, (v) => { nameDraft.value = v })
+// Имя для поля «Кто проверяет»:
+//   • если пользователь залогинен — из аккаунта (через useViewerName);
+//   • если нет — из localStorage (тоже через useViewerName).
+// Мы НЕ используем props.userName как источник истины, только как
+// совместимый fallback, если composable по какой-то причине пуст.
+const nameDraft = ref(viewerName.value || props.userName)
+watch(viewerName, (v) => { if (v !== nameDraft.value) nameDraft.value = v }, { immediate: true })
+watch(() => props.userName, (v) => { if (v && !nameDraft.value) nameDraft.value = v })
+
 function commitName() {
-  if (nameDraft.value.trim() !== props.userName) {
-    emit('change-name', nameDraft.value)
+  const v = nameDraft.value.trim()
+  if (v !== viewerName.value) {
+    viewerName.value = v
+    emit('change-name', v)
   }
 }
 

@@ -24,7 +24,6 @@ const socket = useChecklistSocket()
         <div class="menu-arrow" aria-hidden="true">→</div>
       </NuxtLink>
 
-
       <NuxtLink to="/calendar" class="menu-card">
         <div class="menu-title">Календарь залов и студии</div>
         <div class="menu-desc">

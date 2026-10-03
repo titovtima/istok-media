@@ -37,10 +37,10 @@ export default defineEventHandler(async (event): Promise<AuthUser> => {
 
   const id = newId('u')
   const hash = await hashPassword(password)
-  const rows = await query<{ id: string; email: string; login: string; full_name: string }>(
+  const rows = await query<{ id: string; email: string; login: string; full_name: string; is_admin: boolean }>(
     `INSERT INTO users (id, email, login, full_name, password_hash)
      VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, email, login, full_name`,
+     RETURNING id, email, login, full_name, is_admin, is_admin, is_admin`,
     [id, email, login, fullName, hash]
   )
   const user = rows[0]
@@ -48,5 +48,5 @@ export default defineEventHandler(async (event): Promise<AuthUser> => {
   const { token, expiresAt } = await createSession(user.id)
   setSessionCookie(event, token, expiresAt)
 
-  return { id: user.id, email: user.email, login: user.login, fullName: user.full_name }
+  return { id: user.id, email: user.email, login: user.login, fullName: user.full_name, isAdmin: !!user.is_admin }
 })

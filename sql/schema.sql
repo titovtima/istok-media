@@ -119,7 +119,8 @@ CREATE TABLE IF NOT EXISTS users (
   full_name      TEXT NOT NULL,
   password_hash  TEXT NOT NULL,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  is_admin       BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

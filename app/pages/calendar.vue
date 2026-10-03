@@ -5,6 +5,7 @@ import type {
   OrganizerType, WsServerMessage,
 } from '~~/shared/types'
 import { useActor } from '~/composables/useActor'
+import { useAuthStore } from '~/stores/auth'
 
 const NAME_KEY = 'mc_name'
 const CHURCH_NAME = 'Источник Жизни'
@@ -32,6 +33,7 @@ const WEEKDAYS_RU = ['воскресенье','понедельник','втор
 
 const clientId = ref('')
 const { actor, displayName: viewerName } = useActor()
+const auth = useAuthStore()
 onMounted(() => {
   clientId.value = useClientId()
 })
@@ -486,6 +488,32 @@ function groupByDate(list: BookingWithAttendance[]): { date: string; items: Book
   return out
 }
 const grouped = computed(() => groupByDate(visibleDays.value))
+
+// Права на действия в UI. Совпадают с серверными проверками:
+//   • залогиненный пользователь может редактировать/удалять всё, кроме
+//     брони и серии от имени церкви;
+//   · админ — может всё;
+//   · аноним — не может ничего редактировать/удалять.
+function canModify(b: BookingWithAttendance): boolean {
+  if (!auth.isLoggedIn) return false
+  if (b.organizerType === 'church') return !!auth.user?.isAdmin
+  return true
+}
+function canDeleteBooking(b: BookingWithAttendance): boolean {
+  return canModify(b)
+}
+function canEditBooking(b: BookingWithAttendance): boolean {
+  return canModify(b)
+}
+function canSkipSeries(b: BookingWithAttendance): boolean {
+  return canModify(b)
+}
+function canRestoreSeries(b: BookingWithAttendance): boolean {
+  return canModify(b)
+}
+function canCancelSeries(b: BookingWithAttendance): boolean {
+  return canModify(b)
+}
 const todayStr = isoDate(new Date())
 
 function attendanceSummaryLine(b: BookingWithAttendance): string {
@@ -610,9 +638,14 @@ const WEEKDAY_OPTIONS = [
             </div>
 
             <!-- Действия -->
-            <div class="actions-row" v-if="!b.cancelled || b.seriesId">
+            <div class="actions-row" v-if="(!b.cancelled || b.seriesId) && (
+              (!b.seriesId && canDeleteBooking(b)) ||
+              (b.seriesId && !b.cancelled && (canSkipSeries(b) || canCancelSeries(b))) ||
+              (b.seriesId && b.cancelled && canRestoreSeries(b)) ||
+              (!b.cancelled && canEditBooking(b))
+            )">
               <button
-                v-if="!b.cancelled"
+                v-if="!b.cancelled && canEditBooking(b)"
                 type="button"
                 class="icon-btn"
                 title="Редактировать"
@@ -620,7 +653,7 @@ const WEEKDAY_OPTIONS = [
               >✎ редактировать</button>
 
               <button
-                v-if="!b.seriesId"
+                v-if="!b.seriesId && canDeleteBooking(b)"
                 type="button"
                 class="icon-btn"
                 title="Удалить бронь"
@@ -629,7 +662,7 @@ const WEEKDAY_OPTIONS = [
 
               <template v-else>
                 <button
-                  v-if="!b.cancelled"
+                  v-if="!b.cancelled && canSkipSeries(b)"
                   type="button"
                   class="icon-btn"
                   title="Отменить только на эту дату"
@@ -637,7 +670,7 @@ const WEEKDAY_OPTIONS = [
                 >✕ на дату</button>
 
                 <button
-                  v-else
+                  v-else-if="canRestoreSeries(b)"
                   type="button"
                   class="icon-btn icon-restore"
                   title="Вернуть эту дату — отметки присутствия сохранятся"
@@ -645,7 +678,7 @@ const WEEKDAY_OPTIONS = [
                 >↺ вернуть</button>
 
                 <button
-                  v-if="!b.cancelled"
+                  v-if="!b.cancelled && canCancelSeries(b)"
                   type="button"
                   class="icon-btn"
                   title="Отменить серию целиком"
@@ -796,7 +829,7 @@ const WEEKDAY_OPTIONS = [
     </div>
 
     <!-- ---------- Форма (снизу) ---------- -->
-    <div class="card">
+    <div v-if="auth.isLoggedIn" class="card">
       <h2>Новая бронь</h2>
       <div class="form-grid">
         <div class="field span-2">
@@ -845,6 +878,8 @@ const WEEKDAY_OPTIONS = [
               :key="t"
               type="button"
               :aria-pressed="form.organizerType === t ? 'true' : 'false'"
+              :disabled="t === 'church' && !auth.user?.isAdmin"
+              :title="t === 'church' && !auth.user?.isAdmin ? 'только администратор может создавать брони от имени церкви' : ''"
               @click="form.organizerType = t"
             >{{ ORGANIZER_LABEL[t] }}</button>
           </div>

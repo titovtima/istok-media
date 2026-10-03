@@ -43,11 +43,11 @@ export default defineEventHandler(async (event): Promise<AuthUser> => {
   sets.push(`updated_at = now()`)
   params.push(me.id)
 
-  const rows = await query<{ id: string; email: string; login: string; full_name: string }>(
+  const rows = await query<{ id: string; email: string; login: string; full_name: string; is_admin: boolean }>(
     `UPDATE users SET ${sets.join(', ')} WHERE id = $${i}
-     RETURNING id, email, login, full_name`,
+     RETURNING id, email, login, full_name, is_admin, is_admin, is_admin`,
     params
   )
   const u = rows[0]
-  return { id: u.id, email: u.email, login: u.login, fullName: u.full_name }
+  return { id: u.id, email: u.email, login: u.login, fullName: u.full_name, isAdmin: !!u.is_admin }
 })

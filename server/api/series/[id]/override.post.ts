@@ -1,5 +1,6 @@
 import { query } from '~~/server/utils/db'
 import { broadcastToService } from '~~/server/utils/ws-hub'
+import { getUserFromEvent } from '~~/server/utils/auth'
 import type { BookingResource, OrganizerType } from '~~/shared/types'
 
 interface Body {
@@ -25,6 +26,25 @@ export default defineEventHandler(async (event) => {
   const seriesId = getRouterParam(event, 'id')
   if (!seriesId) throw createError({ statusCode: 400, statusMessage: 'id required' })
   const body = await readBody<Body>(event)
+
+  // -------- Права --------
+  const me = await getUserFromEvent(event)
+  if (!me) {
+    throw createError({ statusCode: 401, statusMessage: 'переопределять серию могут только зарегистрированные пользователи' })
+  }
+  {
+    // Проверяем и то, что прислал клиент, и то, что уже есть в БД:
+    // override на церковную серию — только для админа.
+    const cur = await query<{ organizer_type: string }>(
+      `SELECT organizer_type FROM booking_series WHERE id = $1`,
+      [seriesId]
+    )
+    const wasChurch = cur[0]?.organizer_type === 'church'
+    const becomesChurch = body.organizerType === 'church'
+    if ((wasChurch || becomesChurch) && !me.isAdmin) {
+      throw createError({ statusCode: 403, statusMessage: 'переопределение серии от имени церкви доступно только администратору' })
+    }
+  }
 
   const date = (body?.date || '').trim()
   const start = (body?.start || '').trim()

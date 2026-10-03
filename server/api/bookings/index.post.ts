@@ -1,5 +1,7 @@
 import { query } from '~~/server/utils/db'
 import { broadcastToService } from '~~/server/utils/ws-hub'
+import { getUserFromEvent } from '~~/server/utils/auth'
+import { getUserFromEvent } from '~~/server/utils/auth'
 import type { BookingResource, OrganizerType, SeriesRepeat } from '~~/shared/types'
 
 interface Body {
@@ -32,6 +34,15 @@ export default defineEventHandler(async (event) => {
   if (!['person','ministry','church'].includes(body?.organizerType)) throw createError({ statusCode: 400, statusMessage: 'organizerType required' })
   if (!title) throw createError({ statusCode: 400, statusMessage: 'title required' })
   if (!organizerName) throw createError({ statusCode: 400, statusMessage: 'organizerName required' })
+
+  // -------- Права --------
+  const me = await getUserFromEvent(event)
+  if (!me) {
+    throw createError({ statusCode: 401, statusMessage: 'создавать брони могут только зарегистрированные пользователи' })
+  }
+  if (body.organizerType === 'church' && !me.isAdmin) {
+    throw createError({ statusCode: 403, statusMessage: 'брони от имени церкви может создавать только администратор' })
+  }
 
   const wsPayload = { type: 'booking-changed', date }
 

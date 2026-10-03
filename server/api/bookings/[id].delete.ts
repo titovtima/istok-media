@@ -1,10 +1,26 @@
 import { query } from '~~/server/utils/db'
 import { broadcastToService } from '~~/server/utils/ws-hub'
+import { getUserFromEvent } from '~~/server/utils/auth'
 
 // Разовые брони удаляем из БД полностью — не оставляем следов «отменено».
 // Отметки присутствия по ним тоже чистим: ключ события — 'booking:<id>'.
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
+
+  // -------- Права --------
+  const me = await getUserFromEvent(event)
+  if (!me) {
+    throw createError({ statusCode: 401, statusMessage: 'удалять брони могут только зарегистрированные пользователи' })
+  }
+  {
+    const cur = await query<{ organizer_type: string }>(
+      `SELECT organizer_type FROM bookings WHERE id = $1`,
+      [id]
+    )
+    if (cur[0]?.organizer_type === 'church' && !me.isAdmin) {
+      throw createError({ statusCode: 403, statusMessage: 'бронь от имени церкви может удалять только администратор' })
+    }
+  }
   if (!id) throw createError({ statusCode: 400, statusMessage: 'id required' })
 
   const rows = await query<{ date: string | Date }>(

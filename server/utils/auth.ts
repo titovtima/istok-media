@@ -43,9 +43,10 @@ export async function getUserFromEvent(event: H3Event): Promise<AuthUser | null>
   if (!token) return null
 
   const rows = await query<{
-    id: string; email: string; login: string; full_name: string; expires_at: Date
+    id: string; email: string; login: string; full_name: string;
+    is_admin: boolean; expires_at: Date
   }>(
-    `SELECT u.id, u.email, u.login, u.full_name, s.expires_at
+    `SELECT u.id, u.email, u.login, u.full_name, u.is_admin, s.expires_at
        FROM sessions s
        JOIN users u ON u.id = s.user_id
       WHERE s.token = $1`,
@@ -65,6 +66,7 @@ export async function getUserFromEvent(event: H3Event): Promise<AuthUser | null>
     email: row.email,
     login: row.login,
     fullName: row.full_name,
+    isAdmin: !!row.is_admin,
   }
 }
 
@@ -98,9 +100,10 @@ export function validateLogin(login: string): boolean {
 
 export async function getUserById(id: string): Promise<(AuthUser & { passwordHash: string }) | null> {
   const rows = await query<{
-    id: string; email: string; login: string; full_name: string; password_hash: string
+    id: string; email: string; login: string; full_name: string;
+    password_hash: string; is_admin: boolean
   }>(
-    `SELECT id, email, login, full_name, password_hash FROM users WHERE id = $1`,
+    `SELECT id, email, login, full_name, password_hash, is_admin FROM users WHERE id = $1`,
     [id]
   )
   if (!rows.length) return null
@@ -110,6 +113,20 @@ export async function getUserById(id: string): Promise<(AuthUser & { passwordHas
     email: r.email,
     login: r.login,
     fullName: r.full_name,
+    isAdmin: !!r.is_admin,
     passwordHash: r.password_hash,
   }
+}
+
+export async function requireAdmin(event: H3Event): Promise<AuthUser> {
+  const me = await getUserFromEvent(event)
+  if (!me) throw createError({ statusCode: 401, statusMessage: 'нужно войти' })
+  if (!me.isAdmin) throw createError({ statusCode: 403, statusMessage: 'требуются права администратора' })
+  return me
+}
+
+export async function requireUser(event: H3Event): Promise<AuthUser> {
+  const me = await getUserFromEvent(event)
+  if (!me) throw createError({ statusCode: 401, statusMessage: 'нужно войти' })
+  return me
 }

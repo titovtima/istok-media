@@ -216,4 +216,5 @@ export interface AuthUser {
   email: string
   login: string
   fullName: string
+  isAdmin: boolean
 }

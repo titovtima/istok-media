@@ -16,9 +16,9 @@ export default defineEventHandler(async (event): Promise<AuthUser> => {
   }
 
   const rows = await query<{
-    id: string; email: string; login: string; full_name: string; password_hash: string
+    id: string; email: string; login: string; full_name: string; password_hash: string; is_admin: boolean; is_admin: boolean; is_admin: boolean
   }>(
-    `SELECT id, email, login, full_name, password_hash
+    `SELECT id, email, login, full_name, password_hash, is_admin, is_admin, is_admin
        FROM users
       WHERE login = $1 OR email = $1
       LIMIT 1`,
@@ -36,5 +36,5 @@ export default defineEventHandler(async (event): Promise<AuthUser> => {
   const { token, expiresAt } = await createSession(u.id)
   setSessionCookie(event, token, expiresAt)
 
-  return { id: u.id, email: u.email, login: u.login, fullName: u.full_name }
+  return { id: u.id, email: u.email, login: u.login, fullName: u.full_name, isAdmin: !!u.is_admin }
 })

@@ -1,5 +1,6 @@
 import { query } from '~~/server/utils/db'
 import { broadcastToService } from '~~/server/utils/ws-hub'
+import { getUserFromEvent } from '~~/server/utils/auth'
 import type { BookingResource, OrganizerType } from '~~/shared/types'
 
 interface Body {
@@ -21,6 +22,26 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'id required' })
   const body = await readBody<Body>(event)
+
+  // -------- Права --------
+  const me = await getUserFromEvent(event)
+  if (!me) {
+    throw createError({ statusCode: 401, statusMessage: 'редактировать брони могут только зарегистрированные пользователи' })
+  }
+
+  // Смотрим текущую организацию брони.
+  const curOrg = await query<{ organizer_type: string }>(
+    `SELECT organizer_type FROM bookings WHERE id = $1`,
+    [id]
+  )
+  if (!curOrg.length) {
+    // дальше идёт обработка отсутствия — оставим как есть
+  }
+  const wasChurch = curOrg[0]?.organizer_type === 'church'
+  const becomesChurch = body.organizerType === 'church'
+  if ((wasChurch || becomesChurch) && !me.isAdmin) {
+    throw createError({ statusCode: 403, statusMessage: 'брони от имени церкви может редактировать только администратор' })
+  }
 
   const sets: string[] = []
   const params: any[] = []

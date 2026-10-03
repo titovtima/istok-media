@@ -33,7 +33,7 @@ export default defineEventHandler(async (event): Promise<AuthUser> => {
     throw createError({ statusCode: 401, statusMessage: 'неверный логин/email или пароль' })
   }
 
-  const { token, expiresAt } = await createSession(u.id)
+  const { token, expiresAt } = await createSession(u.id, event)
   setSessionCookie(event, token, expiresAt)
 
   return { id: u.id, email: u.email, login: u.login, fullName: u.full_name, isAdmin: !!u.is_admin }

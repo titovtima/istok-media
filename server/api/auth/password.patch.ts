@@ -1,6 +1,7 @@
 import { query } from '~~/server/utils/db'
 import {
   getUserFromEvent, getUserById, hashPassword, verifyPassword,
+  revokeAllSessions, getSessionTokenFromEvent,
 } from '~~/server/utils/auth'
 
 interface Body {
@@ -30,6 +31,9 @@ export default defineEventHandler(async (event) => {
     `UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2`,
     [newHash, me.id]
   )
-  // Сессии не трогаем — текущая сессия продолжает работать.
-  return { ok: true }
+  // Отзываем все прочие сессии — текущая продолжает работать.
+  const token = getSessionTokenFromEvent(event)
+  if (token) await revokeAllSessions(me.id, token)
+
+  return { ok: true, revokedOthers: true }
 })

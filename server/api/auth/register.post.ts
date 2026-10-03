@@ -45,7 +45,7 @@ export default defineEventHandler(async (event): Promise<AuthUser> => {
   )
   const user = rows[0]
 
-  const { token, expiresAt } = await createSession(user.id)
+  const { token, expiresAt } = await createSession(user.id, event)
   setSessionCookie(event, token, expiresAt)
 
   return { id: user.id, email: user.email, login: user.login, fullName: user.full_name, isAdmin: !!user.is_admin }

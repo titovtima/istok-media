@@ -33,6 +33,7 @@ const MINISTRIES = [
 const WEEKDAYS_RU = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота']
 
 const clientId = ref('')
+const mounted = ref(false)
 const { actor, displayName: viewerName } = useActor()
 const auth = useAuthStore()
 onMounted(() => {
@@ -288,6 +289,7 @@ async function persistViewerName() {
 }
 
 onMounted(async () => {
+  mounted.value = true
   await loadRange()
   const socket = useChecklistSocket()
   socket.subscribe('calendar')
@@ -496,23 +498,35 @@ const grouped = computed(() => groupByDate(visibleDays.value))
 //   · админ — может всё;
 //   · аноним — не может ничего редактировать/удалять.
 function canModify(b: BookingWithAttendance): boolean {
+  if (!mounted.value) return false
+  if (!auth.loaded) return false
   if (!auth.isLoggedIn) return false
   if (b.organizerType === 'church') return !!auth.user?.isAdmin
   return true
 }
 function canDeleteBooking(b: BookingWithAttendance): boolean {
+  if (!mounted.value) return false
+  if (!auth.loaded) return false
   return canModify(b)
 }
 function canEditBooking(b: BookingWithAttendance): boolean {
+  if (!mounted.value) return false
+  if (!auth.loaded) return false
   return canModify(b)
 }
 function canSkipSeries(b: BookingWithAttendance): boolean {
+  if (!mounted.value) return false
+  if (!auth.loaded) return false
   return canModify(b)
 }
 function canRestoreSeries(b: BookingWithAttendance): boolean {
+  if (!mounted.value) return false
+  if (!auth.loaded) return false
   return canModify(b)
 }
 function canCancelSeries(b: BookingWithAttendance): boolean {
+  if (!mounted.value) return false
+  if (!auth.loaded) return false
   return canModify(b)
 }
 const todayStr = isoDate(new Date())
@@ -542,7 +556,7 @@ const WEEKDAY_OPTIONS = [
 </script>
 
 <template>
-  <div class="wrap">
+<div class="wrap">
     <div>
       <BrandBar />
       <h1>Календарь залов и студии</h1>
@@ -611,7 +625,8 @@ const WEEKDAY_OPTIONS = [
             <div class="booking-meta">
               {{ b.organizerName }}
               <span class="muted">· {{ ORGANIZER_LABEL[b.organizerType] }}</span>
-              <template v-if="b.note"> · <span class="muted">{{ b.note }}</span></template>
+              <template v-if="b.note"> · <span class="muted">{{ b.note }}</span>
+</template>
             </div>
 
             <!-- Присутствие -->
@@ -830,7 +845,7 @@ const WEEKDAY_OPTIONS = [
     </div>
 
     <!-- ---------- Форма (снизу) ---------- -->
-    <div v-if="auth.isLoggedIn" class="card">
+    <div v-if="mounted && auth.loaded && auth.isLoggedIn" class="card">
       <h2>Новая бронь</h2>
       <div class="form-grid">
         <div class="field span-2">
@@ -879,8 +894,8 @@ const WEEKDAY_OPTIONS = [
               :key="t"
               type="button"
               :aria-pressed="form.organizerType === t ? 'true' : 'false'"
-              :disabled="t === 'church' && !auth.user?.isAdmin"
-              :title="t === 'church' && !auth.user?.isAdmin ? 'только администратор может создавать брони от имени церкви' : ''"
+              :disabled="t === 'church' && !(mounted && auth.loaded && auth.user?.isAdmin)"
+              :title="t === 'church' && !(mounted && auth.loaded && auth.user?.isAdmin) ? 'только администратор может создавать брони от имени церкви' : ''"
               @click="form.organizerType = t"
             >{{ ORGANIZER_LABEL[t] }}</button>
           </div>

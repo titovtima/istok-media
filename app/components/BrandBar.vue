@@ -6,10 +6,9 @@ const router = useRouter()
 
 async function doLogout() {
   await auth.logout()
-  // сбрасываем override имени
   try {
-    const { resetViewerNameOverride } = await import('~/composables/useViewerName')
-    resetViewerNameOverride()
+    const { resetActorOverride } = await import('~/composables/useActor')
+    resetActorOverride()
   } catch {}
   await router.push('/')
 }
@@ -39,18 +38,30 @@ async function doLogout() {
       <span class="label">медиа-служение</span>
     </NuxtLink>
 
-    <div class="auth-box">
-      <template v-if="auth.isLoggedIn">
-        <NuxtLink to="/settings" class="auth-name" :title="`Настройки · ${auth.user?.email || ''}`">
-          {{ auth.user?.fullName }}<span v-if="auth.user?.isAdmin" class="auth-admin-tag"> · админ</span>
-        </NuxtLink>
-        <NuxtLink to="/users" class="auth-link">пользователи</NuxtLink>
-        <button type="button" class="auth-link" @click="doLogout">выйти</button>
+    <!--
+      Блок авторизации рендерим только на клиенте: на сервере нет сессии,
+      и сервер отрисует "войти/регистрация", а клиент после hydrate —
+      "Имя / пользователи / выйти". Это классический hydration mismatch,
+      поэтому <ClientOnly>.
+    -->
+    <ClientOnly>
+      <template #fallback>
+        <div class="auth-box auth-box-placeholder" aria-hidden="true"></div>
       </template>
-      <template v-else>
-        <NuxtLink to="/login" class="auth-link">войти</NuxtLink>
-        <NuxtLink to="/register" class="auth-link">регистрация</NuxtLink>
-      </template>
-    </div>
+
+      <div class="auth-box">
+        <template v-if="auth.isLoggedIn">
+          <NuxtLink to="/settings" class="auth-name" :title="`Настройки · ${auth.user?.email || ''}`">
+            {{ auth.user?.fullName }}<span v-if="auth.user?.isAdmin" class="auth-admin-tag"> · админ</span>
+          </NuxtLink>
+          <NuxtLink to="/users" class="auth-link">пользователи</NuxtLink>
+          <button type="button" class="auth-link" @click="doLogout">выйти</button>
+        </template>
+        <template v-else>
+          <NuxtLink to="/login" class="auth-link">войти</NuxtLink>
+          <NuxtLink to="/register" class="auth-link">регистрация</NuxtLink>
+        </template>
+      </div>
+    </ClientOnly>
   </div>
 </template>

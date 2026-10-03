@@ -1,4 +1,5 @@
 <script setup lang="ts">
+useHead({ title: 'Пользователи' })
 import { onMounted, ref } from 'vue'
 import type { AuthUser } from '~~/shared/types'
 import { useAuthStore } from '~/stores/auth'

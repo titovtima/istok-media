@@ -1,4 +1,5 @@
 <script setup lang="ts">
+useHead({ title: 'Чеклист' })
 import { onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useChecklistStore } from '~/stores/checklist'

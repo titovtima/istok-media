@@ -1,4 +1,5 @@
 <script setup lang="ts">
+useHead({ title: 'Обратная связь' })
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useActor } from '~/composables/useActor'
 import type { FeedbackEntry, FeedbackService, WsServerMessage } from '~~/shared/types'

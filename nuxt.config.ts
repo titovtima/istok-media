@@ -9,14 +9,20 @@ export default defineNuxtConfig({
   },
   app: {
     head: {
-      title: 'Чеклист',
+      title: 'Источник Жизни — медиаслужение',
+      titleTemplate: (titleChunk) =>
+        titleChunk ? `${titleChunk} · Источник Жизни` : 'Источник Жизни — медиаслужение',
       htmlAttrs: { lang: 'ru' },
       link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         {
           rel: 'stylesheet',
           href: 'https://fonts.googleapis.com/css2?family=Anonymous+Pro:wght@400;700&family=Golos+Text:wght@500;600;700&display=swap',
         },
+      ],
+      meta: [
+        { name: 'theme-color', content: '#162781' },
       ],
     },
   },

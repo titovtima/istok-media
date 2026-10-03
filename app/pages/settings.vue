@@ -1,4 +1,5 @@
 <script setup lang="ts">
+useHead({ title: 'Настройки' })
 import { reactive, ref, watch } from 'vue'
 import { useAuthStore } from '~/stores/auth'
 

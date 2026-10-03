@@ -517,3 +517,10 @@ footer{text-align:center; color:var(--text-dim); font-size:11.5px; font-family:'
 .pill-group button:disabled{
   opacity:.45; cursor:not-allowed;
 }
+
+
+/* ---- placeholder для ClientOnly вокруг auth-блока ---- */
+/* По высоте/ширине примерно как реальный auth-box — чтобы layout не прыгал. */
+.auth-box-placeholder{
+  min-width:120px; min-height:18px;
+}

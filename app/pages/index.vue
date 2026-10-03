@@ -1,4 +1,5 @@
 <script setup lang="ts">
+useHead({ title: 'Медиаслужение' })
 import { useChecklistSocket } from '~/composables/useChecklistSocket'
 
 const socket = useChecklistSocket()

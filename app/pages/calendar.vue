@@ -1,4 +1,5 @@
 <script setup lang="ts">
+useHead({ title: 'Календарь залов и студии' })
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import type {
   AttendanceStatus, BookingResource, BookingWithAttendance,

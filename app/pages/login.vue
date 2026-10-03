@@ -1,4 +1,5 @@
 <script setup lang="ts">
+useHead({ title: 'Вход' })
 import { reactive, ref } from 'vue'
 import { useAuthStore } from '~/stores/auth'
 

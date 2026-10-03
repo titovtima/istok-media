@@ -1,4 +1,4 @@
-import { onBeforeUnmount, readonly, ref } from 'vue'
+import { readonly, ref } from 'vue'
 import type { WsClientMessage, WsServerMessage } from '~~/shared/types'
 
 type Handler = (msg: WsServerMessage) => void
@@ -89,8 +89,8 @@ export function useChecklistSocket() {
     handlers.add(handler)
     return () => handlers.delete(handler)
   }
-
-  onBeforeUnmount(() => { /* общий сокет */ })
+  // Общий сокет живёт всё время жизни приложения — не закрываем его
+  // при размонтировании компонента.
 
   return {
     // readonly, чтобы потребители случайно не перезаписывали

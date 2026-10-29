@@ -4,6 +4,7 @@ import {
   type SeriesRow,
 } from '~~/server/utils/events'
 import { resolveActors, isAnonActor } from '~~/server/utils/actor'
+import { resolveActorGroups } from '~~/server/utils/groups'
 import type {
   AttendanceRecord, AttendanceStatus, AttendanceSummary,
   BookingRecord, BookingResource, BookingWithAttendance,
@@ -141,9 +142,10 @@ export default defineEventHandler(async (event): Promise<BookingWithAttendance[]
     )
   }
 
-  // Резолвим display name для всех actor разом.
+  // Резолвим display name и группы для всех actor разом.
   const actors = Array.from(new Set(attRows.map(r => r.actor)))
   const actorNames = await resolveActors(actors)
+  const actorGroups = await resolveActorGroups(actors)
 
   const attByEvent = new Map<string, AttendanceRecord[]>()
   for (const r of attRows) {
@@ -152,6 +154,7 @@ export default defineEventHandler(async (event): Promise<BookingWithAttendance[]
       actor: r.actor,
       displayName: actorNames.get(r.actor) ?? (isAnonActor(r.actor) ? r.actor.slice(5) : r.actor),
       status: r.status,
+      groupIds: actorGroups.get(r.actor) ?? [],
     })
   }
 

@@ -167,6 +167,7 @@ export interface AttendanceRecord {
   actor: string             // user.login или 'anon:<имя>'
   displayName: string       // вычислено сервером: full_name или имя без префикса
   status: AttendanceStatus
+  groupIds: string[]
 }
 
 export interface AttendanceSummary {
@@ -195,6 +196,7 @@ export interface WsAttendanceChanged {
   actor: string
   displayName: string        // вычислено сервером
   status: AttendanceStatus | null
+  groupIds: string[]
 }
 
 export type WsServerMessage =

@@ -31,6 +31,7 @@ const auth = useAuthStore()
 // Группы служений — фильтруем по тем, где пользователь участник.
 // Админ видит все группы.
 const groupsAll = ref<Group[]>([])
+const attendanceFilter = ref<string>('all')
 async function loadGroups() {
   try { groupsAll.value = await $fetch<Group[]>('/api/groups') } catch {}
 }
@@ -301,6 +302,12 @@ onMounted(async () => {
   const socket = useChecklistSocket()
   socket.subscribe('calendar')
   socket.onMessage(handleWs)
+  // Начальный фильтр по группе: первая группа пользователя или 'all'.
+  if (auth.isLoggedIn && myGroups.value.length) {
+    attendanceFilter.value = myGroups.value[0].id
+  } else {
+    attendanceFilter.value = 'all'
+  }
 })
 
 function handleWs(msg: WsServerMessage) {
@@ -315,7 +322,7 @@ function handleWs(msg: WsServerMessage) {
   }
 }
 
-function applyAttendance(msg: { eventKey: string; actor: string; displayName: string; status: AttendanceStatus | null }) {
+function applyAttendance(msg: { eventKey: string; actor: string; displayName: string; groupIds?: string[]; status: AttendanceStatus | null }) {
   const d = days.value.find(x => x.id === msg.eventKey)
   if (!d) return
   const strip = (list: any[]) => list.filter(r => r.actor !== msg.actor)
@@ -323,7 +330,12 @@ function applyAttendance(msg: { eventKey: string; actor: string; displayName: st
   d.attendance.no = strip(d.attendance.no)
   d.attendance.maybe = strip(d.attendance.maybe)
   if (msg.status) {
-    const rec = { actor: msg.actor, displayName: msg.displayName, status: msg.status }
+    const rec = {
+      actor: msg.actor,
+      displayName: msg.displayName,
+      status: msg.status,
+      groupIds: Array.isArray(msg.groupIds) ? msg.groupIds : [],
+    }
     if (msg.status === 'yes') d.attendance.yes.push(rec)
     else if (msg.status === 'no') d.attendance.no.push(rec)
     else d.attendance.maybe.push(rec)
@@ -448,7 +460,12 @@ async function setAttendance(b: BookingWithAttendance, status: AttendanceStatus)
   b.attendance.no = strip(b.attendance.no)
   b.attendance.maybe = strip(b.attendance.maybe)
   if (next) {
-    const rec = { actor: myActor, displayName: name, status: next }
+    const rec = {
+      actor: myActor,
+      displayName: name,
+      status: next,
+      groupIds: myGroups.value.map(g => g.id),
+    }
     if (next === 'yes') b.attendance.yes.push(rec)
     else if (next === 'no') b.attendance.no.push(rec)
     else b.attendance.maybe.push(rec)
@@ -537,6 +554,12 @@ function canCancelSeries(b: BookingWithAttendance): boolean {
   return canModify(b)
 }
 const todayStr = isoDate(new Date())
+
+function filterByGroup(list: any[]): any[] {
+  const f = attendanceFilter.value
+  if (!f || f === 'all') return list
+  return list.filter(r => Array.isArray(r.groupIds) && r.groupIds.includes(f))
+}
 
 function attendanceSummaryLine(b: BookingWithAttendance): string {
   const y = b.attendance.yes.length
@@ -836,19 +859,35 @@ const WEEKDAY_OPTIONS = [
 
             <!-- Раскрытый список присутствия -->
             <div v-if="openAttendance.has(b.id)" class="att-detail">
-              <div v-if="b.attendance.yes.length" class="att-group">
+              <div class="att-filter">
+                <button
+                  type="button"
+                  class="att-filter-btn"
+                  :aria-pressed="attendanceFilter === 'all' ? 'true' : 'false'"
+                  @click="attendanceFilter = 'all'"
+                >все</button>
+                <button
+                  v-for="g in groupsAll"
+                  :key="g.id"
+                  type="button"
+                  class="att-filter-btn"
+                  :aria-pressed="attendanceFilter === g.id ? 'true' : 'false'"
+                  @click="attendanceFilter = g.id"
+                >{{ g.label }}</button>
+              </div>
+              <div v-if="filterByGroup(b.attendance.yes).length" class="att-group">
                 <span class="att-group-title att-yes-title">будут</span>
-                <span class="att-names">{{ b.attendance.yes.map(r => r.displayName).join(', ') }}</span>
+                <span class="att-names">{{ filterByGroup(b.attendance.yes).map(r => r.displayName).join(', ') }}</span>
               </div>
-              <div v-if="b.attendance.maybe.length" class="att-group">
+              <div v-if="filterByGroup(b.attendance.maybe).length" class="att-group">
                 <span class="att-group-title att-maybe-title">под вопросом</span>
-                <span class="att-names">{{ b.attendance.maybe.map(r => r.displayName).join(', ') }}</span>
+                <span class="att-names">{{ filterByGroup(b.attendance.maybe).map(r => r.displayName).join(', ') }}</span>
               </div>
-              <div v-if="b.attendance.no.length" class="att-group">
+              <div v-if="filterByGroup(b.attendance.no).length" class="att-group">
                 <span class="att-group-title att-no-title">не будут</span>
-                <span class="att-names">{{ b.attendance.no.map(r => r.displayName).join(', ') }}</span>
+                <span class="att-names">{{ filterByGroup(b.attendance.no).map(r => r.displayName).join(', ') }}</span>
               </div>
-              <div v-if="!b.attendance.yes.length && !b.attendance.maybe.length && !b.attendance.no.length" class="day-empty">
+              <div v-if="!filterByGroup(b.attendance.yes).length && !filterByGroup(b.attendance.maybe).length && !filterByGroup(b.attendance.no).length" class="day-empty">
                 пока никто не отметился
               </div>
             </div>

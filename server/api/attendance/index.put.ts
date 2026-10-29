@@ -2,6 +2,7 @@ import { query } from '~~/server/utils/db'
 import { broadcastToService } from '~~/server/utils/ws-hub'
 import { getUserFromEvent } from '~~/server/utils/auth'
 import { anonActorFromName, displayNameSync, isAnonActor } from '~~/server/utils/actor'
+import { resolveActorGroups } from '~~/server/utils/groups'
 import type { AttendanceStatus } from '~~/shared/types'
 
 interface Body {
@@ -38,7 +39,7 @@ export default defineEventHandler(async (event) => {
   }
   if (!actor) throw createError({ statusCode: 400, statusMessage: 'actor required' })
 
-  // Вычисляем displayName для broadcast.
+  // Вычисляем displayName и groupIds для broadcast.
   let displayName = displayNameSync(actor)
   if (!isAnonActor(actor)) {
     const row = await query<{ full_name: string }>(
@@ -47,6 +48,8 @@ export default defineEventHandler(async (event) => {
     )
     displayName = row[0]?.full_name || actor
   }
+  const actorGroupsMap = await resolveActorGroups([actor])
+  const groupIds = actorGroupsMap.get(actor) ?? []
 
   // Снятие
   if (body.status === null) {
@@ -56,7 +59,7 @@ export default defineEventHandler(async (event) => {
     )
     broadcastToService('calendar', {
       type: 'attendance-changed',
-      eventKey, actor, displayName, status: null,
+      eventKey, actor, displayName, groupIds, status: null,
     })
     return { ok: true }
   }
@@ -76,7 +79,7 @@ export default defineEventHandler(async (event) => {
 
   broadcastToService('calendar', {
     type: 'attendance-changed',
-    eventKey, actor, displayName, status: body.status,
+    eventKey, actor, displayName, groupIds, status: body.status,
   })
   return { ok: true }
 })

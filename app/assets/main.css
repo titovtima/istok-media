@@ -545,3 +545,27 @@ footer{text-align:center; color:var(--text-dim); font-size:11.5px; font-family:'
 
 /* ---- кнопка «выйти со всех» ---- */
 .submit-btn.warn-btn{ background:var(--warn); }
+
+
+/* ---- страница /groups ---- */
+.groups-list{ display:flex; flex-direction:column; gap:14px; }
+.group-card{ padding:16px 18px 18px; }
+.group-head{
+  display:flex; align-items:baseline; justify-content:space-between;
+  gap:10px; flex-wrap:wrap; margin-bottom:10px;
+}
+.group-head h2{ margin:0; }
+.group-actions{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.submit-btn.small{ height:32px; padding:0 16px; font-size:13.5px; }
+
+.group-members{ display:flex; flex-direction:column; }
+.group-member-row{
+  display:flex; align-items:center; gap:10px;
+  padding:8px 2px; border-top:1px solid var(--border);
+}
+.group-member-row:first-child{ border-top:none; }
+.group-member-name{ font-family:'Golos Text',sans-serif; font-weight:600; font-size:14px; }
+.group-member-login{ font-family:'Anonymous Pro',monospace; font-size:12px; color:var(--text-dim); }
+.group-member-row .icon-btn{ margin-left:auto; }
+
+.new-group-form{ display:flex; flex-direction:column; gap:12px; }

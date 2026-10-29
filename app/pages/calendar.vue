@@ -3,7 +3,7 @@ useHead({ title: 'Календарь залов и студии' })
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import type {
   AttendanceStatus, BookingResource, BookingWithAttendance,
-  OrganizerType, WsServerMessage,
+  Group, OrganizerType, WsServerMessage,
 } from '~~/shared/types'
 import { useActor } from '~/composables/useActor'
 import { useAuthStore } from '~/stores/auth'
@@ -21,21 +21,27 @@ const ORGANIZER_LABEL: Record<OrganizerType, string> = {
   ministry: 'служение',
   church: 'церковь',
 }
-const MINISTRIES = [
-  { id: 'worship', label: 'прославление' },
-  { id: 'media', label: 'медиаслужение' },
-  { id: 'order', label: 'служба порядка' },
-  { id: 'cleaning', label: 'уборка' },
-  { id: 'kids', label: 'детское служение' },
-  { id: 'youth', label: 'молодёжное служение' },
-  { id: 'prayer', label: 'молитвенное служение' },
-]
 const WEEKDAYS_RU = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота']
 
 const clientId = ref('')
 const mounted = ref(false)
 const { actor, displayName: viewerName } = useActor()
 const auth = useAuthStore()
+
+// Группы служений — фильтруем по тем, где пользователь участник.
+// Админ видит все группы.
+const groupsAll = ref<Group[]>([])
+async function loadGroups() {
+  try { groupsAll.value = await $fetch<Group[]>('/api/groups') } catch {}
+}
+const myGroups = computed(() => {
+  if (!auth.user) return [] as Group[]
+  if (auth.user.isAdmin) return groupsAll.value
+  return groupsAll.value.filter(g => g.members.some(m => m.userId === auth.user!.id))
+})
+const availableMinistries = computed(() =>
+  myGroups.value.map(g => ({ id: g.id, label: g.label }))
+)
 onMounted(() => {
   clientId.value = useClientId()
 })
@@ -85,8 +91,8 @@ watch(() => form.organizerType, (t) => {
     form.organizerName = viewerName.value || form.organizerName
     form.organizerId = null
   } else if (t === 'ministry') {
-    form.organizerId = form.organizerId || MINISTRIES[0].id
-    form.organizerName = MINISTRIES.find(m => m.id === form.organizerId)?.label || MINISTRIES[0].label
+    form.organizerId = form.organizerId || availableMinistries.value[0]?.id || null
+    form.organizerName = availableMinistries.value.find(m => m.id === form.organizerId)?.label || availableMinistries.value[0]?.label || ''
   } else if (t === 'church') {
     form.organizerId = null
     form.organizerName = CHURCH_NAME
@@ -289,6 +295,7 @@ async function persistViewerName() {
 }
 
 onMounted(async () => {
+  await loadGroups()
   mounted.value = true
   await loadRange()
   const socket = useChecklistSocket()
@@ -776,7 +783,7 @@ const WEEKDAY_OPTIONS = [
                   <label>Служение</label>
                   <div class="pill-group">
                     <button
-                      v-for="m in MINISTRIES"
+                      v-for="m in availableMinistries"
                       :key="m.id"
                       type="button"
                       :aria-pressed="editDraft.organizerId === m.id ? 'true' : 'false'"
@@ -785,13 +792,19 @@ const WEEKDAY_OPTIONS = [
                   </div>
                 </div>
 
-                <div v-if="editDraft.organizerType !== 'church'" class="field span-2">
-                  <label>{{ editDraft.organizerType === 'person' ? 'ФИО' : 'Название служения' }}</label>
-                  <input type="text" v-model="editDraft.organizerName" placeholder="ФИО или название">
-                </div>
-                <div v-else class="field span-2">
+                <div v-if="editDraft.organizerType === 'church'" class="field span-2">
                   <label>Церковь</label>
                   <div class="church-name">{{ CHURCH_NAME }}</div>
+                </div>
+                <div v-else-if="editDraft.organizerType === 'ministry'" class="field span-2">
+                  <label>Название служения</label>
+                  <div class="church-name">
+                    {{ editDraft.organizerName || 'служение не выбрано' }}
+                  </div>
+                </div>
+                <div v-else class="field span-2">
+                  <label>ФИО</label>
+                  <input type="text" v-model="editDraft.organizerName" placeholder="ФИО">
                 </div>
 
                 <div class="field span-2">
@@ -903,27 +916,38 @@ const WEEKDAY_OPTIONS = [
 
         <div v-if="form.organizerType === 'ministry'" class="field span-2">
           <label>Служение</label>
-          <div class="pill-group">
+          <div v-if="availableMinistries.length" class="pill-group">
             <button
-              v-for="m in MINISTRIES"
+              v-for="m in availableMinistries"
               :key="m.id"
               type="button"
               :aria-pressed="form.organizerId === m.id ? 'true' : 'false'"
               @click="form.organizerId = m.id; form.organizerName = m.label"
             >{{ m.label }}</button>
           </div>
+          <div v-else class="hint">
+            Вы не входите ни в одну группу служений.
+            <NuxtLink to="/groups" class="auth-link">Вступить</NuxtLink>
+          </div>
         </div>
 
-        <div v-if="form.organizerType !== 'church'" class="field span-2">
-          <label for="bk-orgname">
-            {{ form.organizerType === 'person' ? 'ФИО' : 'Название служения' }}
-          </label>
-          <input id="bk-orgname" type="text" v-model="form.organizerName"
-                 placeholder="ФИО или название">
-        </div>
-        <div v-else class="field span-2">
+        <!-- Церковь — фиксированное название, поле ввода не нужно -->
+        <div v-if="form.organizerType === 'church'" class="field span-2">
           <label>Церковь</label>
           <div class="church-name">{{ CHURCH_NAME }}</div>
+        </div>
+        <!-- Служение — название берётся из выбранной группы, вручную не редактируется -->
+        <div v-else-if="form.organizerType === 'ministry'" class="field span-2">
+          <label>Название служения</label>
+          <div class="church-name">
+            {{ form.organizerName || 'служение не выбрано' }}
+          </div>
+        </div>
+        <!-- Человек — обычное поле ФИО -->
+        <div v-else class="field span-2">
+          <label for="bk-orgname">ФИО</label>
+          <input id="bk-orgname" type="text" v-model="form.organizerName"
+                 placeholder="ФИО">
         </div>
 
         <div class="field span-2">

@@ -1,7 +1,9 @@
 import { query } from '~~/server/utils/db'
 import { broadcastToService } from '~~/server/utils/ws-hub'
 import { getUserFromEvent } from '~~/server/utils/auth'
+import { userInGroup, getGroupLabel } from '~~/server/utils/groups'
 import { getUserFromEvent } from '~~/server/utils/auth'
+import { userInGroup, getGroupLabel } from '~~/server/utils/groups'
 import type { BookingResource, OrganizerType, SeriesRepeat } from '~~/shared/types'
 
 interface Body {
@@ -40,8 +42,26 @@ export default defineEventHandler(async (event) => {
   if (!me) {
     throw createError({ statusCode: 401, statusMessage: 'создавать брони могут только зарегистрированные пользователи' })
   }
-  if (body.organizerType === 'church' && !me.isAdmin) {
-    throw createError({ statusCode: 403, statusMessage: 'брони от имени церкви может создавать только администратор' })
+  if (!me.isAdmin) {
+    if (body.organizerType === 'church') {
+      throw createError({ statusCode: 403, statusMessage: 'брони от имени церкви может создавать только администратор' })
+    }
+    if (body.organizerType === 'ministry') {
+      if (!body.organizerId) {
+        throw createError({ statusCode: 403, statusMessage: 'брони от имени служения создают только участники группы' })
+      }
+      const inGroup = await userInGroup(me.id, body.organizerId)
+      if (!inGroup) {
+        throw createError({ statusCode: 403, statusMessage: 'вы не участник этого служения' })
+      }
+    }
+  }
+
+  // Нормализуем organizerName: для ministry — берём label из БД.
+  let finalOrganizerName = organizerName
+  if (body.organizerType === 'ministry' && body.organizerId) {
+    const label = await getGroupLabel(body.organizerId)
+    if (label) finalOrganizerName = label
   }
 
   const wsPayload = { type: 'booking-changed', date }
@@ -56,7 +76,7 @@ export default defineEventHandler(async (event) => {
        RETURNING id`,
       [
         id, date, start, end, body.resource, title,
-        body.organizerType, organizerName, body.organizerId ?? null,
+        body.organizerType, finalOrganizerName, body.organizerId ?? null,
         body.note ?? '', body.createdBy ?? null,
       ]
     )
@@ -79,7 +99,7 @@ export default defineEventHandler(async (event) => {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
     [
       seriesId, weekday, start, end, body.resource, title,
-      body.organizerType, organizerName, body.organizerId ?? null,
+      body.organizerType, finalOrganizerName, body.organizerId ?? null,
       body.note ?? '', repeat, date, body.createdBy ?? null,
     ]
   )

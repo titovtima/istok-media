@@ -218,3 +218,20 @@ export interface AuthUser {
   fullName: string
   isAdmin: boolean
 }
+
+// ---------------------------------------------------------------------------
+// Группы служений
+// ---------------------------------------------------------------------------
+export interface GroupMember {
+  userId: string
+  fullName: string
+  login: string
+  joinedAt: string
+}
+
+export interface Group {
+  id: string
+  label: string
+  position: number
+  members: GroupMember[]
+}

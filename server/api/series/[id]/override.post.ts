@@ -1,6 +1,7 @@
 import { query } from '~~/server/utils/db'
 import { broadcastToService } from '~~/server/utils/ws-hub'
 import { getUserFromEvent } from '~~/server/utils/auth'
+import { userInGroup, getGroupLabel } from '~~/server/utils/groups'
 import type { BookingResource, OrganizerType } from '~~/shared/types'
 
 interface Body {
@@ -33,16 +34,25 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, statusMessage: 'переопределять серию могут только зарегистрированные пользователи' })
   }
   {
-    // Проверяем и то, что прислал клиент, и то, что уже есть в БД:
-    // override на церковную серию — только для админа.
-    const cur = await query<{ organizer_type: string }>(
-      `SELECT organizer_type FROM booking_series WHERE id = $1`,
+    const cur = await query<{ organizer_type: string; organizer_id: string | null }>(
+      `SELECT organizer_type, organizer_id FROM booking_series WHERE id = $1`,
       [seriesId]
     )
-    const wasChurch = cur[0]?.organizer_type === 'church'
+    const org = cur[0]
+    const wasChurch = org?.organizer_type === 'church'
     const becomesChurch = body.organizerType === 'church'
     if ((wasChurch || becomesChurch) && !me.isAdmin) {
       throw createError({ statusCode: 403, statusMessage: 'переопределение серии от имени церкви доступно только администратору' })
+    }
+    if (!me.isAdmin && org?.organizer_type === 'ministry') {
+      if (!org.organizer_id || !(await userInGroup(me.id, org.organizer_id))) {
+        throw createError({ statusCode: 403, statusMessage: 'эта серия принадлежит служению, в котором вы не состоите' })
+      }
+    }
+    if (!me.isAdmin && body.organizerType === 'ministry') {
+      if (!body.organizerId || !(await userInGroup(me.id, body.organizerId))) {
+        throw createError({ statusCode: 403, statusMessage: 'нельзя переопределить от имени служения, в котором вы не состоите' })
+      }
     }
   }
 
@@ -67,6 +77,13 @@ export default defineEventHandler(async (event) => {
   )
   if (!s.length) throw createError({ statusCode: 404, statusMessage: 'series not found' })
 
+  // Нормализуем organizerName: для ministry — берём label из БД.
+  let finalOrganizerName = organizerName
+  if (body.organizerType === 'ministry' && body.organizerId) {
+    const label = await getGroupLabel(body.organizerId)
+    if (label) finalOrganizerName = label
+  }
+
   const id = 'bk_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
 
   await query('BEGIN')
@@ -78,7 +95,7 @@ export default defineEventHandler(async (event) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
         id, date, start, end, body.resource, title,
-        body.organizerType, organizerName, body.organizerId ?? null,
+        body.organizerType, finalOrganizerName, body.organizerId ?? null,
         body.note ?? '', body.createdBy ?? null,
       ]
     )

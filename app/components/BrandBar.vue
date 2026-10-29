@@ -55,6 +55,7 @@ async function doLogout() {
             {{ auth.user?.fullName }}<span v-if="auth.user?.isAdmin" class="auth-admin-tag"> · админ</span>
           </NuxtLink>
           <NuxtLink to="/users" class="auth-link">пользователи</NuxtLink>
+          <NuxtLink to="/groups" class="auth-link">группы</NuxtLink>
           <button type="button" class="auth-link" @click="doLogout">выйти</button>
         </template>
         <template v-else>

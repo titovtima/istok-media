@@ -1,6 +1,7 @@
 import { query } from '~~/server/utils/db'
 import { broadcastToService } from '~~/server/utils/ws-hub'
 import { getUserFromEvent } from '~~/server/utils/auth'
+import { userInGroup, getGroupLabel } from '~~/server/utils/groups'
 import type { BookingResource, OrganizerType, SeriesRepeat } from '~~/shared/types'
 
 interface Body {
@@ -31,15 +32,39 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, statusMessage: 'редактировать серии могут только зарегистрированные пользователи' })
   }
   {
-    const cur = await query<{ organizer_type: string }>(
-      `SELECT organizer_type FROM booking_series WHERE id = $1`,
+    const cur = await query<{ organizer_type: string; organizer_id: string | null }>(
+      `SELECT organizer_type, organizer_id FROM booking_series WHERE id = $1`,
       [id]
     )
     const wasChurch = cur[0]?.organizer_type === 'church'
     const becomesChurch = body.organizerType === 'church'
+    const wasMinistry = cur[0]?.organizer_type === 'ministry'
+    const wasMinistryId = cur[0]?.organizer_id || null
+    const becomesMinistry = body.organizerType === 'ministry'
+
     if ((wasChurch || becomesChurch) && !me.isAdmin) {
       throw createError({ statusCode: 403, statusMessage: 'серии от имени церкви может редактировать только администратор' })
     }
+    if (!me.isAdmin) {
+      if (wasMinistry) {
+        if (!wasMinistryId || !(await userInGroup(me.id, wasMinistryId))) {
+          throw createError({ statusCode: 403, statusMessage: 'эта серия принадлежит служению, в котором вы не состоите' })
+        }
+      }
+      if (becomesMinistry) {
+        const target = (body.organizerId ?? wasMinistryId) as string | null
+        if (!target || !(await userInGroup(me.id, target))) {
+          throw createError({ statusCode: 403, statusMessage: 'нельзя передать серию служению, в котором вы не состоите' })
+        }
+      }
+    }
+  }
+
+  // Нормализуем organizerName: для ministry — берём label из БД.
+  let normalizedName = body.organizerName
+  if (body.organizerType === 'ministry' && body.organizerId) {
+    const label = await getGroupLabel(body.organizerId)
+    if (label) normalizedName = label
   }
 
   const sets: string[] = []
@@ -73,8 +98,8 @@ export default defineEventHandler(async (event) => {
     if (!ORGANIZERS.includes(body.organizerType)) throw createError({ statusCode: 400, statusMessage: 'invalid organizerType' })
     sets.push(`organizer_type = $${i++}`); params.push(body.organizerType)
   }
-  if (body.organizerName !== undefined) {
-    const n = body.organizerName.trim()
+  if (body.organizerName !== undefined || normalizedName !== undefined) {
+    const n = (normalizedName ?? body.organizerName ?? '').trim()
     if (!n) throw createError({ statusCode: 400, statusMessage: 'organizerName required' })
     sets.push(`organizer_name = $${i++}`); params.push(n)
   }

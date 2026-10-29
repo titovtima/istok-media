@@ -30,6 +30,7 @@ interface AttRow {
   event_key: string
   actor: string
   status: AttendanceStatus
+  role_ids: string[]
 }
 
 function inClause(values: string[], startIndex = 1): { placeholders: string; values: string[] } | null {
@@ -135,7 +136,7 @@ export default defineEventHandler(async (event): Promise<BookingWithAttendance[]
   const attClause = inClause(eventKeys)
   if (attClause) {
     attRows = await query<AttRow>(
-      `SELECT event_key, actor, status
+      `SELECT event_key, actor, status, role_ids
          FROM attendance
         WHERE event_key IN (${attClause.placeholders})`,
       attClause.values
@@ -155,6 +156,7 @@ export default defineEventHandler(async (event): Promise<BookingWithAttendance[]
       displayName: actorNames.get(r.actor) ?? (isAnonActor(r.actor) ? r.actor.slice(5) : r.actor),
       status: r.status,
       groupIds: actorGroups.get(r.actor) ?? [],
+      roleIds: Array.isArray(r.role_ids) ? r.role_ids : [],
     })
   }
 
@@ -163,16 +165,21 @@ export default defineEventHandler(async (event): Promise<BookingWithAttendance[]
   const summary = (key: string): AttendanceSummary => {
     const list = attByEvent.get(key) ?? []
     let mine: AttendanceStatus | null = null
+    let mineRoleIds: string[] = []
     if (viewerActor) {
       const rec = list.find(x => x.actor === viewerActor)
-      if (rec) mine = rec.status
+      if (rec) {
+        mine = rec.status
+        mineRoleIds = rec.roleIds ?? []
+      }
     }
     return {
       yes:   list.filter(x => x.status === 'yes'),
       no:    list.filter(x => x.status === 'no'),
       maybe: list.filter(x => x.status === 'maybe'),
       mine,
-    }
+      mineRoleIds,
+    } as any
   }
 
   return records

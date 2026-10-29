@@ -335,6 +335,7 @@ function applyAttendance(msg: { eventKey: string; actor: string; displayName: st
       displayName: msg.displayName,
       status: msg.status,
       groupIds: Array.isArray(msg.groupIds) ? msg.groupIds : [],
+      roleIds: Array.isArray(msg.roleIds) ? msg.roleIds : [],
     }
     if (msg.status === 'yes') d.attendance.yes.push(rec)
     else if (msg.status === 'no') d.attendance.no.push(rec)
@@ -465,6 +466,7 @@ async function setAttendance(b: BookingWithAttendance, status: AttendanceStatus)
       displayName: name,
       status: next,
       groupIds: myGroups.value.map(g => g.id),
+      roleIds: b.attendance.mineRoleIds || [],
     }
     if (next === 'yes') b.attendance.yes.push(rec)
     else if (next === 'no') b.attendance.no.push(rec)
@@ -480,6 +482,7 @@ async function setAttendance(b: BookingWithAttendance, status: AttendanceStatus)
         actor: myActor,
         displayName: name,
         status: next,
+        roleIds: b.attendance.mineRoleIds || [],
       },
     })
   } catch {
@@ -555,10 +558,84 @@ function canCancelSeries(b: BookingWithAttendance): boolean {
 }
 const todayStr = isoDate(new Date())
 
+// Роли, доступные текущему пользователю: все роли из его групп
+// (для админа — все роли всех групп). Используется только в блоке
+// присутствия, чтобы предложить отметить роли на мероприятии.
+const availableRolesForMe = computed(() => {
+  if (!auth.user) return [] as { id: string; label: string; groupLabel: string }[]
+  const groups = auth.user.isAdmin ? groupsAll.value : myGroups.value
+  const out: { id: string; label: string; groupLabel: string }[] = []
+  for (const g of groups) {
+    for (const r of (g.roles || [])) {
+      out.push({ id: r.id, label: r.label, groupLabel: g.label })
+    }
+  }
+  return out
+})
+
+// Резолвит roleIds в { id, label } с учётом всех известных групп.
+function roleLabel(roleId: string): string {
+  for (const g of groupsAll.value) {
+    const r = (g.roles || []).find(x => x.id === roleId)
+    if (r) return r.label
+  }
+  return '?'
+}
+
+async function toggleMyRole(b: BookingWithAttendance, roleId: string) {
+  if (!auth.isLoggedIn) return
+  // Своя отметка должна быть уже поставлена (status != null).
+  if (!b.attendance.mine) return
+  const current = Array.isArray(b.attendance.mineRoleIds) ? b.attendance.mineRoleIds : []
+  const has = current.includes(roleId)
+  const next = has ? current.filter(id => id !== roleId) : [...current, roleId]
+  await updateMyRoles(b, next)
+}
+
+async function updateMyRoles(b: BookingWithAttendance, roleIds: string[]) {
+  const name = viewerName.value.trim()
+  const myActor = actor.value
+  // Оптимистично
+  const prev = b.attendance.mineRoleIds || []
+  b.attendance.mineRoleIds = roleIds
+
+  // Обновим соответствующий rec в своём списке (yes/no/maybe)
+  const status = b.attendance.mine
+  if (status) {
+    const listKey = status === 'yes' ? 'yes' : status === 'no' ? 'no' : 'maybe'
+    const arr = (b.attendance as any)[listKey] as any[]
+    const rec = arr.find(r => r.actor === myActor)
+    if (rec) rec.roleIds = roleIds
+  }
+
+  try {
+    await $fetch('/api/attendance', {
+      method: 'PUT',
+      body: {
+        eventKey: b.id,
+        actor: myActor,
+        displayName: name,
+        status,
+        roleIds,
+      },
+    })
+  } catch {
+    b.attendance.mineRoleIds = prev
+  }
+}
+
+function displayWithRoles(r: any): string {
+  const name = r.displayName || ''
+  const roles = Array.isArray(r.roleIds)
+    ? r.roleIds.map((id: string) => roleLabel(id)).filter((x: string) => x && x !== '?')
+    : []
+  return roles.length ? `${name} (${roles.join(', ')})` : name
+}
+
 function filterByGroup(list: any[]): any[] {
   const f = attendanceFilter.value
   if (!f || f === 'all') return list
-  return list.filter(r => Array.isArray(r.groupIds) && r.groupIds.includes(f))
+  return list.filter((r: any) => Array.isArray(r.groupIds) && r.groupIds.includes(f))
 }
 
 function attendanceSummaryLine(b: BookingWithAttendance): string {
@@ -676,6 +753,20 @@ const WEEKDAY_OPTIONS = [
                 :aria-pressed="b.attendance.mine === 'no' ? 'true' : 'false'"
                 @click="setAttendance(b, 'no')" title="не будет"
               >−</button>
+
+              <!-- роль(и) на мероприятии — только для залогиненных с активной отметкой -->
+              <template v-if="auth.isLoggedIn && b.attendance.mine && availableRolesForMe.length">
+                <span class="att-role-label">роли:</span>
+                <button
+                  v-for="r in availableRolesForMe"
+                  :key="r.id"
+                  type="button"
+                  class="att-role-btn"
+                  :aria-pressed="(b.attendance.mineRoleIds || []).includes(r.id) ? 'true' : 'false'"
+                  :title="`${r.groupLabel} · ${r.label}`"
+                  @click="toggleMyRole(b, r.id)"
+                >{{ r.label }}</button>
+              </template>
 
               <button type="button" class="att-summary" @click="toggleAttendanceOpen(b.id)">
                 {{ attendanceSummaryLine(b) }}
@@ -877,15 +968,15 @@ const WEEKDAY_OPTIONS = [
               </div>
               <div v-if="filterByGroup(b.attendance.yes).length" class="att-group">
                 <span class="att-group-title att-yes-title">будут</span>
-                <span class="att-names">{{ filterByGroup(b.attendance.yes).map(r => r.displayName).join(', ') }}</span>
+                <span class="att-names">{{ filterByGroup(b.attendance.yes).map(displayWithRoles).join(', ') }}</span>
               </div>
               <div v-if="filterByGroup(b.attendance.maybe).length" class="att-group">
                 <span class="att-group-title att-maybe-title">под вопросом</span>
-                <span class="att-names">{{ filterByGroup(b.attendance.maybe).map(r => r.displayName).join(', ') }}</span>
+                <span class="att-names">{{ filterByGroup(b.attendance.maybe).map(displayWithRoles).join(', ') }}</span>
               </div>
               <div v-if="filterByGroup(b.attendance.no).length" class="att-group">
                 <span class="att-group-title att-no-title">не будут</span>
-                <span class="att-names">{{ filterByGroup(b.attendance.no).map(r => r.displayName).join(', ') }}</span>
+                <span class="att-names">{{ filterByGroup(b.attendance.no).map(displayWithRoles).join(', ') }}</span>
               </div>
               <div v-if="!filterByGroup(b.attendance.yes).length && !filterByGroup(b.attendance.maybe).length && !filterByGroup(b.attendance.no).length" class="day-empty">
                 пока никто не отметился

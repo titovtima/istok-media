@@ -168,6 +168,7 @@ export interface AttendanceRecord {
   displayName: string       // вычислено сервером: full_name или имя без префикса
   status: AttendanceStatus
   groupIds: string[]
+  roleIds: string[]
 }
 
 export interface AttendanceSummary {
@@ -176,6 +177,7 @@ export interface AttendanceSummary {
   maybe: AttendanceRecord[]
   // статус текущего пользователя (по viewerName + clientId)
   mine: AttendanceStatus | null
+  mineRoleIds?: string[]
 }
 
 export interface BookingWithAttendance extends BookingRecord {
@@ -197,6 +199,7 @@ export interface WsAttendanceChanged {
   displayName: string        // вычислено сервером
   status: AttendanceStatus | null
   groupIds: string[]
+  roleIds: string[]
 }
 
 export type WsServerMessage =
@@ -224,6 +227,12 @@ export interface AuthUser {
 // ---------------------------------------------------------------------------
 // Группы служений
 // ---------------------------------------------------------------------------
+
+export interface RoleItem {
+  id: string
+  label: string
+}
+
 export interface GroupMember {
   userId: string
   fullName: string
@@ -236,4 +245,5 @@ export interface Group {
   label: string
   position: number
   members: GroupMember[]
+  roles: RoleItem[]
 }

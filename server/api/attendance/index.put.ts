@@ -7,6 +7,7 @@ import type { AttendanceStatus } from '~~/shared/types'
 
 interface Body {
   eventKey: string
+  roleIds?: string[]
   // Кто: либо сервер сам выведет из auth-сессии, либо — если не залогинен —
   // клиент присылает actor ('anon:<имя>') или пару displayName + clientId.
   actor?: string
@@ -59,7 +60,7 @@ export default defineEventHandler(async (event) => {
     )
     broadcastToService('calendar', {
       type: 'attendance-changed',
-      eventKey, actor, displayName, groupIds, status: null,
+      eventKey, actor, displayName, groupIds, roleIds: [], status: null,
     })
     return { ok: true }
   }
@@ -68,18 +69,35 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'invalid status' })
   }
 
+  // Валидация и нормализация roleIds: только роли из групп, где состоит actor.
+  let finalRoleIds: string[] = []
+  if (!isAnonActor(actor) && Array.isArray(body.roleIds) && body.roleIds.length) {
+    const actorGroups = await resolveActorGroups([actor])
+    const myGroupIds = actorGroups.get(actor) ?? []
+    if (myGroupIds.length) {
+      const placeholders = myGroupIds.map((_, i) => `$${i + 1}`).join(', ')
+      const rows = await query<{ id: string }>(
+        `SELECT id FROM group_roles WHERE group_id IN (${placeholders})`,
+        myGroupIds,
+      )
+      const allowed = new Set(rows.map(r => r.id))
+      finalRoleIds = body.roleIds.filter(id => allowed.has(id))
+    }
+  }
+
   await query(
-    `INSERT INTO attendance (event_key, actor, status, updated_at)
-     VALUES ($1, $2, $3, now())
+    `INSERT INTO attendance (event_key, actor, status, role_ids, updated_at)
+     VALUES ($1, $2, $3, $4, now())
      ON CONFLICT (event_key, actor) DO UPDATE
        SET status = EXCLUDED.status,
+           role_ids = EXCLUDED.role_ids,
            updated_at = now()`,
-    [eventKey, actor, body.status]
+    [eventKey, actor, body.status, finalRoleIds]
   )
 
   broadcastToService('calendar', {
     type: 'attendance-changed',
-    eventKey, actor, displayName, groupIds, status: body.status,
+    eventKey, actor, displayName, groupIds, roleIds: finalRoleIds, status: body.status,
   })
   return { ok: true }
 })

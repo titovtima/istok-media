@@ -2,20 +2,24 @@
 useHead({ title: 'Группы служений' })
 
 import { onMounted, reactive, ref } from 'vue'
-import type { Group } from '~~/shared/types'
+import type { Group, RoleItem } from '~~/shared/types'
 import { useAuthStore } from '~/stores/auth'
 
 const auth = useAuthStore()
 const groups = ref<Group[]>([])
 const loading = ref(true)
-const mounted = ref(false)
 const err = ref('')
+const mounted = ref(false)
 
 const showNewForm = ref(false)
 const newForm = reactive({ id: '', label: '' })
 const newMsg = ref('')
 const newMsgKind = ref<'' | 'ok' | 'error'>('')
 const newBusy = ref(false)
+
+// Управление ролями
+const newRole = reactive<Record<string, string>>({})
+const editingRole = ref<{ roleId: string; groupId: string; label: string } | null>(null)
 
 async function load() {
   loading.value = true
@@ -28,11 +32,20 @@ async function load() {
     loading.value = false
   }
 }
-onMounted(() => { mounted.value = true; load() })
+onMounted(async () => {
+  mounted.value = true
+  await load()
+})
 
 function isMember(g: Group): boolean {
   if (!auth.user) return false
   return g.members.some(m => m.userId === auth.user!.id)
+}
+
+function canManageRoles(g: Group): boolean {
+  if (!auth.user) return false
+  if (auth.user.isAdmin) return true
+  return isMember(g)
 }
 
 async function join(g: Group) {
@@ -95,6 +108,53 @@ async function deleteGroup(g: Group) {
     alert(e?.data?.statusMessage || 'Не удалось удалить группу.')
   }
 }
+
+// --------- Роли ---------
+async function addRole(g: Group) {
+  const label = (newRole[g.id] || '').trim()
+  if (!label) return
+  try {
+    await $fetch(`/api/groups/${g.id}/roles`, {
+      method: 'POST',
+      body: { label },
+    })
+    newRole[g.id] = ''
+    await load()
+  } catch (e: any) {
+    alert(e?.data?.statusMessage || 'Не удалось создать роль.')
+  }
+}
+
+function startEditRole(g: Group, r: RoleItem) {
+  editingRole.value = { roleId: r.id, groupId: g.id, label: r.label }
+}
+
+async function saveEditRole() {
+  if (!editingRole.value) return
+  const { roleId, groupId, label } = editingRole.value
+  const trimmed = label.trim()
+  if (!trimmed) return
+  try {
+    await $fetch(`/api/groups/${groupId}/roles/${roleId}`, {
+      method: 'PATCH',
+      body: { label: trimmed },
+    })
+    editingRole.value = null
+    await load()
+  } catch (e: any) {
+    alert(e?.data?.statusMessage || 'Не удалось сохранить.')
+  }
+}
+
+async function removeRole(g: Group, r: RoleItem) {
+  if (!confirm(`Удалить роль «${r.label}»?`)) return
+  try {
+    await $fetch(`/api/groups/${g.id}/roles/${r.id}`, { method: 'DELETE' })
+    await load()
+  } catch (e: any) {
+    alert(e?.data?.statusMessage || 'Не удалось удалить роль.')
+  }
+}
 </script>
 
 <template>
@@ -104,12 +164,14 @@ async function deleteGroup(g: Group) {
       <h1>Группы служений</h1>
       <p class="subtitle">
         Вступить в группу можно свободно и в любой момент. Участники группы
-        могут создавать, редактировать и удалять брони от имени своего служения.
+        могут создавать, редактировать и удалять брони от имени своего служения,
+        а также управлять ролями внутри группы.
         Администратор может управлять участниками и самими группами.
       </p>
     </div>
 
-    <div class="card" v-if="mounted && auth.loaded && auth.user?.isAdmin">
+    <!-- Управление группой (админ) -->
+    <div v-if="mounted && auth.loaded && auth.user?.isAdmin" class="card">
       <div class="group-head">
         <h2>Управление</h2>
         <button type="button" class="submit-btn" @click="showNewForm = !showNewForm">
@@ -167,6 +229,7 @@ async function deleteGroup(g: Group) {
           </div>
         </div>
 
+        <!-- Участники -->
         <div class="group-members">
           <div v-if="!g.members.length" class="day-empty">пока никого</div>
           <div v-for="m in g.members" :key="m.userId" class="group-member-row">
@@ -179,6 +242,45 @@ async function deleteGroup(g: Group) {
               title="Удалить из группы"
               @click="removeMember(g, m.userId, m.fullName)"
             >✕</button>
+          </div>
+        </div>
+
+        <!-- Роли группы -->
+        <div class="roles-block">
+          <div class="roles-head">
+            <span class="roles-title">роли группы</span>
+            <template v-if="mounted && auth.loaded && canManageRoles(g)">
+              <input
+                type="text"
+                class="role-new-input"
+                v-model="newRole[g.id]"
+                placeholder="новая роль"
+                @keyup.enter="addRole(g)"
+              >
+              <button type="button" class="icon-btn" @click="addRole(g)">+ добавить</button>
+            </template>
+          </div>
+
+          <div v-if="!g.roles || !g.roles.length" class="day-empty">пока нет ролей</div>
+
+          <div v-for="r in g.roles" :key="r.id" class="role-row">
+            <template v-if="editingRole && editingRole.roleId === r.id">
+              <input
+                type="text"
+                class="role-new-input"
+                v-model="editingRole.label"
+                @keyup.enter="saveEditRole"
+              >
+              <button type="button" class="icon-btn" @click="saveEditRole">сохранить</button>
+              <button type="button" class="icon-btn" @click="editingRole = null">отмена</button>
+            </template>
+            <template v-else>
+              <span class="role-label">{{ r.label }}</span>
+              <template v-if="mounted && auth.loaded && canManageRoles(g)">
+                <button type="button" class="icon-btn" title="Редактировать" @click="startEditRole(g, r)">✎</button>
+                <button type="button" class="icon-btn" title="Удалить" @click="removeRole(g, r)">✕</button>
+              </template>
+            </template>
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { query } from './db'
-import type { Group, GroupMember } from '~~/shared/types'
+import type { Group, GroupMember, RoleItem } from '~~/shared/types'
 
 export async function userInGroup(userId: string, groupId: string): Promise<boolean> {
   const rows = await query<{ one: number }>(
@@ -51,11 +51,25 @@ export async function listGroupsWithMembers(): Promise<Group[]> {
     })
   }
 
+  // Роли по всем группам одним запросом.
+  const roles = await query<{ id: string; group_id: string; label: string }>(
+    `SELECT id, group_id, label FROM group_roles
+      WHERE group_id IN (${placeholders})
+      ORDER BY label`,
+    ids,
+  )
+  const rolesByGroup = new Map<string, RoleItem[]>()
+  for (const r of roles) {
+    if (!rolesByGroup.has(r.group_id)) rolesByGroup.set(r.group_id, [])
+    rolesByGroup.get(r.group_id)!.push({ id: r.id, label: r.label })
+  }
+
   return groups.map(g => ({
     id: g.id,
     label: g.label,
     position: g.position,
     members: byGroup.get(g.id) ?? [],
+    roles: rolesByGroup.get(g.id) ?? [],
   }))
 }
 

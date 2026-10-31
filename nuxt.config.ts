@@ -9,11 +9,13 @@ export default defineNuxtConfig({
   },
   app: {
     head: {
+      script: [{ src: '/register-sw.js', defer: true }],
       title: 'Источник Жизни — медиаслужение',
       titleTemplate: (titleChunk) =>
         titleChunk ? `${titleChunk} · Источник Жизни` : 'Источник Жизни — медиаслужение',
       htmlAttrs: { lang: 'ru' },
       link: [
+        { rel: 'manifest', href: '/manifest.webmanifest' },
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         {

@@ -629,3 +629,16 @@ footer{text-align:center; color:var(--text-dim); font-size:11.5px; font-family:'
 .att-role-btn[aria-pressed="true"]{
   background:var(--accent); color:var(--accent-ink); border-color:var(--accent);
 }
+
+
+/* ---- push-уведомления ---- */
+.push-row{
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  margin:0 0 12px;
+}
+.push-toggle{
+  display:inline-flex; align-items:center; gap:8px;
+  font-family:'Anonymous Pro',monospace; font-size:12.5px;
+  color:var(--text); cursor:pointer;
+}
+.push-toggle input{ accent-color:var(--accent); }

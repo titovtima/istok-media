@@ -6,6 +6,7 @@ import type {
   Group, OrganizerType, WsServerMessage,
 } from '~~/shared/types'
 import { useActor } from '~/composables/useActor'
+import { usePush } from '~/composables/usePush'
 import { useAuthStore } from '~/stores/auth'
 
 const NAME_KEY = 'mc_name'
@@ -24,6 +25,7 @@ const ORGANIZER_LABEL: Record<OrganizerType, string> = {
 const WEEKDAYS_RU = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота']
 
 const clientId = ref('')
+const push = usePush()
 const mounted = ref(false)
 const { actor, displayName: viewerName } = useActor()
 const auth = useAuthStore()
@@ -308,6 +310,7 @@ onMounted(async () => {
   } else {
     attendanceFilter.value = 'all'
   }
+  await push.refreshStatus()
 })
 
 function handleWs(msg: WsServerMessage) {
@@ -684,6 +687,22 @@ const WEEKDAY_OPTIONS = [
           <button type="button" @click="changeRange(1)">неделя ▶</button>
           <button type="button" @click="goToday">сегодня</button>
         </div>
+      </div>
+
+            <div class="push-row" v-if="mounted && auth.loaded && auth.isLoggedIn && push.supported.value">
+        <label class="push-toggle">
+          <input
+            type="checkbox"
+            :checked="push.subscribed.value"
+            @change="async (e) => {
+              const checked = (e.target as HTMLInputElement).checked
+              if (checked) await push.enable()
+              else await push.disable()
+            }"
+          >
+          <span>уведомления о мероприятиях</span>
+        </label>
+        <span v-if="push.permission.value === 'denied'" class="hint">уведомления заблокированы в браузере</span>
       </div>
 
       <div class="viewer-row">
